@@ -75,11 +75,6 @@ export async function fetchItemsLite(limit = 200): Promise<Item[]> {
   return items;
 }
 
-/** 兼容旧接口：等同 fetchItemsLite */
-export async function fetchItems(): Promise<Item[]> {
-  return fetchItemsLite(500);
-}
-
 /** 单独拉取图片映射 { id → photo } — 在列表加载完成后异步调用 */
 export async function fetchItemPhotos(): Promise<Map<string, string>> {
   const cached = cacheGet<Map<string, string>>(CACHE_KEYS.ITEMS_PHOTOS);

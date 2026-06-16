@@ -9,7 +9,7 @@ import {
   SwapOutlined, AppstoreOutlined, UnorderedListOutlined,
   EnvironmentOutlined, DownloadOutlined,
 } from '@ant-design/icons';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useItems } from '../hooks/useItems';
 import { useAuth } from '../contexts/AuthContext';
 import { CATEGORY_LABELS, CATEGORY_COLORS, type ItemCategory, type Item } from '../types';
