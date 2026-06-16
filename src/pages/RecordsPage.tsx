@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Input, Select, Row, Col, Table, Tag, Button, Space,
-  Modal, InputNumber, Checkbox, message, Typography, Empty, Badge,
+  Modal, InputNumber, Checkbox, message, Typography, Empty, Badge, Spin,
 } from 'antd';
 import {
   SearchOutlined, DownloadOutlined, UndoOutlined,
@@ -18,7 +18,7 @@ import { STATUS_LABELS, type BorrowRecord } from '../types';
 const { Title } = Typography;
 
 export default function RecordsPage() {
-  const { records, returnItem, searchRecords } = useBorrowing();
+  const { records, returnItem, searchRecords, loading } = useBorrowing();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
 
@@ -126,45 +126,57 @@ export default function RecordsPage() {
         </Space>
       </div>
 
-      {/* Filters */}
-      <Card style={{ marginBottom: 16, borderRadius: 12 }} size="small">
-        <Row gutter={[12, 12]}>
-          <Col xs={24} sm={12}>
-            <Input prefix={<SearchOutlined />} placeholder="搜索物品、借用人、学号..."
-              value={search} onChange={(e) => setSearch(e.target.value)} allowClear />
-          </Col>
-          <Col xs={24} sm={12}>
-            <Select value={statusFilter} onChange={setStatusFilter} style={{ width: '100%' }}
-              options={[
-                { value: 'all', label: '全部状态' },
-                ...Object.entries(STATUS_LABELS).map(([k, v]) => ({ value: k, label: v })),
-              ]}
-            />
-          </Col>
-        </Row>
-      </Card>
-
-      {/* Table */}
-      {filtered.length === 0 ? (
-        <div className="empty-water" style={{ borderRadius: 12, padding: 40, marginTop: 60, background: '#fff' }}>
-          <Empty description="暂无借记记录">
-            <Button type="primary" onClick={() => navigate('/items')}>去借物品</Button>
-          </Empty>
+      {/* Loading */}
+      {loading && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 240, flexDirection: 'column', gap: 16 }}>
+          <Spin size="large" />
+          <span style={{ color: '#94A3B8', fontSize: 14 }}>正在加载记录数据...</span>
         </div>
-      ) : (
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-          <Card style={{ borderRadius: 12 }}>
-            <Table
-              dataSource={filtered}
-              columns={columns}
-              rowKey="id"
-              size="middle"
-              pagination={{ pageSize: 10, showSizeChanger: false }}
-              scroll={{ x: 600 }}
-              locale={{ emptyText: '暂无记录' }}
-            />
+      )}
+
+      {/* Filters */}
+      {!loading && (
+        <>
+          <Card style={{ marginBottom: 16, borderRadius: 12 }} size="small">
+            <Row gutter={[12, 12]}>
+              <Col xs={24} sm={12}>
+                <Input prefix={<SearchOutlined />} placeholder="搜索物品、借用人、学号..."
+                  value={search} onChange={(e) => setSearch(e.target.value)} allowClear />
+              </Col>
+              <Col xs={24} sm={12}>
+                <Select value={statusFilter} onChange={setStatusFilter} style={{ width: '100%' }}
+                  options={[
+                    { value: 'all', label: '全部状态' },
+                    ...Object.entries(STATUS_LABELS).map(([k, v]) => ({ value: k, label: v })),
+                  ]}
+                />
+              </Col>
+            </Row>
           </Card>
-        </motion.div>
+
+          {/* Table */}
+          {filtered.length === 0 ? (
+            <div className="empty-water" style={{ borderRadius: 12, padding: 40, marginTop: 60, background: '#fff' }}>
+              <Empty description="暂无借记记录">
+                <Button type="primary" onClick={() => navigate('/items')}>去借物品</Button>
+              </Empty>
+            </div>
+          ) : (
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+              <Card style={{ borderRadius: 12 }}>
+                <Table
+                  dataSource={filtered}
+                  columns={columns}
+                  rowKey="id"
+                  size="middle"
+                  pagination={{ pageSize: 10, showSizeChanger: false }}
+                  scroll={{ x: 600 }}
+                  locale={{ emptyText: '暂无记录' }}
+                />
+              </Card>
+            </motion.div>
+          )}
+        </>
       )}
 
       {/* Return modal */}

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Input, Select, Row, Col, Tag, Button, Empty, Table, Space,
-  Popconfirm, message, Typography, Badge,
+  Popconfirm, message, Typography, Badge, Spin, Result,
 } from 'antd';
 import {
   SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
@@ -18,7 +18,7 @@ const { Title } = Typography;
 const { Meta } = Card;
 
 export default function ItemListPage() {
-  const { deleteItem, searchItems } = useItems();
+  const { deleteItem, searchItems, loading, error } = useItems();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
 
@@ -117,7 +117,26 @@ export default function ItemListPage() {
         )}
       </div>
 
-      {/* Filters */}
+      {/* Loading */}
+      {loading && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 240, flexDirection: 'column', gap: 16 }}>
+          <Spin size="large" />
+          <span style={{ color: '#94A3B8', fontSize: 14 }}>正在加载物品数据...</span>
+        </div>
+      )}
+
+      {/* Error */}
+      {!loading && error && (
+        <Result
+          status="error"
+          title="加载失败"
+          subTitle={error}
+          extra={<Button type="primary" onClick={() => window.location.reload()}>重新加载</Button>}
+        />
+      )}
+
+      {/* Filters - 只在数据就绪后显示 */}
+      {!loading && !error && (
       <Card style={{ marginBottom: 16, borderRadius: 12 }} size="small">
         <Row gutter={[12, 12]} align="middle">
           <Col xs={24} sm={8}>
@@ -160,87 +179,92 @@ export default function ItemListPage() {
           </Col>
         </Row>
       </Card>
+      )}
 
-      {/* Results */}
-      {filteredItems.length === 0 ? (
-        <Empty className="empty-water" description="没有找到物品" style={{ marginTop: 60, borderRadius: 12 }} />
-      ) : viewMode === 'card' ? (
-        <motion.div initial="hidden" animate="visible" variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.06 } } }}>
-          <Row gutter={[12, 12]}>
-            {filteredItems.map((item) => (
-              <Col xs={12} sm={8} md={6} lg={6} key={item.id}>
-                <motion.div variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}>
-                  <Card
-                    hoverable
-                    className="item-mobile-card"
-                    cover={
-                      item.photo ? (
-                        <motion.div
-                          initial={{ scale: 0.8, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{ type: 'spring', stiffness: 200, damping: 16 }}
-                          style={{ height: 130, overflow: 'hidden', position: 'relative' }}
-                        >
-                          <motion.div
-                            initial={{ opacity: 1 }}
-                            animate={{ opacity: 0 }}
-                            transition={{ delay: 0.35, duration: 0.25 }}
-                            style={{
-                              position: 'absolute', inset: 0, zIndex: 1,
-                              background: 'radial-gradient(circle at center, #0EA5E9 0%, transparent 65%)',
-                              pointerEvents: 'none',
-                            }}
-                          />
-                          <img src={item.photo} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        </motion.div>
-                      ) : (
-                        <div style={{ height: 130, background: 'linear-gradient(135deg, #E0F2FE, #BAE6FD)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40 }}>
-                          📦
-                        </div>
-                      )
-                    }
-                    onClick={() => navigate(`/items/${item.id}/borrow`)}
-                    styles={{ body: { padding: 10 } }}
-                  >
-                    <Meta
-                      title={<span style={{ fontSize: 13 }}>{item.name}</span>}
-                      description={
-                        <div style={{ fontSize: 11 }}>
-                          <div style={{ marginBottom: 2 }}>
-                            <Tag color={CATEGORY_COLORS[item.category]} style={{ fontSize: 10 }}>
-                              {CATEGORY_LABELS[item.category]}
-                            </Tag>
-                          </div>
-                          <div style={{ color: '#94A3B8' }}>
-                            <EnvironmentOutlined /> {item.location}
-                          </div>
-                          <div style={{ marginTop: 2 }}>
-                            <Badge status={item.availableQty > 0 ? 'success' : 'error'} text={`${item.availableQty}/${item.quantity} 件可用`} />
-                          </div>
-                        </div>
-                      }
-                    />
-                  </Card>
-                </motion.div>
-              </Col>
-            ))}
-          </Row>
-        </motion.div>
-      ) : (
-        <Card style={{ borderRadius: 12 }}>
-          <Table
-            dataSource={filteredItems}
-            columns={columns}
-            rowKey="id"
-            size="middle"
-            pagination={{ pageSize: 10, showSizeChanger: false }}
-            scroll={{ x: 750 }}
-            onRow={(record) => ({
-              onClick: () => navigate(`/items/${record.id}/borrow`),
-              style: { cursor: 'pointer' },
-            })}
-          />
-        </Card>
+      {/* Results - 只在数据就绪后显示 */}
+      {!loading && !error && (
+        <>
+          {filteredItems.length === 0 ? (
+            <Empty className="empty-water" description="没有找到物品" style={{ marginTop: 60, borderRadius: 12 }} />
+          ) : viewMode === 'card' ? (
+            <motion.div initial="hidden" animate="visible" variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.06 } } }}>
+              <Row gutter={[12, 12]}>
+                {filteredItems.map((item) => (
+                  <Col xs={12} sm={8} md={6} lg={6} key={item.id}>
+                    <motion.div variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}>
+                      <Card
+                        hoverable
+                        className="item-mobile-card"
+                        cover={
+                          item.photo ? (
+                            <motion.div
+                              initial={{ scale: 0.8, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              transition={{ type: 'spring', stiffness: 200, damping: 16 }}
+                              style={{ height: 130, overflow: 'hidden', position: 'relative' }}
+                            >
+                              <motion.div
+                                initial={{ opacity: 1 }}
+                                animate={{ opacity: 0 }}
+                                transition={{ delay: 0.35, duration: 0.25 }}
+                                style={{
+                                  position: 'absolute', inset: 0, zIndex: 1,
+                                  background: 'radial-gradient(circle at center, #0EA5E9 0%, transparent 65%)',
+                                  pointerEvents: 'none',
+                                }}
+                              />
+                              <img src={item.photo} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </motion.div>
+                          ) : (
+                            <div style={{ height: 130, background: 'linear-gradient(135deg, #E0F2FE, #BAE6FD)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40 }}>
+                              📦
+                            </div>
+                          )
+                        }
+                        onClick={() => navigate(`/items/${item.id}/borrow`)}
+                        styles={{ body: { padding: 10 } }}
+                      >
+                        <Meta
+                          title={<span style={{ fontSize: 13 }}>{item.name}</span>}
+                          description={
+                            <div style={{ fontSize: 11 }}>
+                              <div style={{ marginBottom: 2 }}>
+                                <Tag color={CATEGORY_COLORS[item.category]} style={{ fontSize: 10 }}>
+                                  {CATEGORY_LABELS[item.category]}
+                                </Tag>
+                              </div>
+                              <div style={{ color: '#94A3B8' }}>
+                                <EnvironmentOutlined /> {item.location}
+                              </div>
+                              <div style={{ marginTop: 2 }}>
+                                <Badge status={item.availableQty > 0 ? 'success' : 'error'} text={`${item.availableQty}/${item.quantity} 件可用`} />
+                              </div>
+                            </div>
+                          }
+                        />
+                      </Card>
+                    </motion.div>
+                  </Col>
+                ))}
+              </Row>
+            </motion.div>
+          ) : (
+            <Card style={{ borderRadius: 12 }}>
+              <Table
+                dataSource={filteredItems}
+                columns={columns}
+                rowKey="id"
+                size="middle"
+                pagination={{ pageSize: 10, showSizeChanger: false }}
+                scroll={{ x: 750 }}
+                onRow={(record) => ({
+                  onClick: () => navigate(`/items/${record.id}/borrow`),
+                  style: { cursor: 'pointer' },
+                })}
+              />
+            </Card>
+          )}
+        </>
       )}
     </div>
   );

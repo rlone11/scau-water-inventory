@@ -1,48 +1,62 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { BorrowRecord } from '../types';
 import { generateId, nowISO } from '../utils/storage';
 import { fetchRecords, createRecord, updateRecord } from '../services/recordService';
-import { fetchItemById, fetchItems, updateItem } from '../services/itemService';
+import { fetchItemById, updateItem } from '../services/itemService';
+
+const RECORDS_LIMIT = 500;
 
 export function useBorrowing() {
   const [records, setRecords] = useState<BorrowRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Load from Supabase
+  // 首次加载 + 自动标记逾期
   useEffect(() => {
     let cancelled = false;
-    fetchRecords()
-      .then((data) => {
-        if (!cancelled) {
-          setRecords(data);
-          setLoading(false);
-          // Mark overdue in memory
-          refreshOverdue(data);
+    setLoading(true);
+    setError(null);
+
+    fetchRecords(RECORDS_LIMIT)
+      .then(async (data) => {
+        if (cancelled) return;
+        setRecords(data);
+        setLoading(false);
+
+        // 并行标记逾期记录
+        const now = new Date();
+        const overdueIds = data
+          .filter((r) => r.status === 'borrowed' && new Date(r.expectedReturnDate) < now)
+          .map((r) => r.id);
+
+        if (overdueIds.length > 0) {
+          await Promise.all(
+            overdueIds.map((id) => updateRecord(id, { status: 'overdue' }).catch(console.error)),
+          );
+
+          // 更新本地状态
+          if (!cancelled) {
+            setRecords((prev) =>
+              prev.map((r) =>
+                overdueIds.includes(r.id) ? { ...r, status: 'overdue' as const } : r,
+              ),
+            );
+          }
         }
       })
       .catch((err) => {
         console.error('Failed to load records:', err);
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setError(err.message || '加载失败');
+          setLoading(false);
+        }
       });
     return () => { cancelled = true; };
   }, []);
 
-  const refreshOverdue = useCallback(async (existing?: BorrowRecord[]) => {
-    const list = existing ?? (await fetchRecords());
-    const now = new Date();
-    let changed = false;
-    const updated = list.map((r) => {
-      if (r.status === 'borrowed' && new Date(r.expectedReturnDate) < now) {
-        changed = true;
-        // Persist overdue status to Supabase
-        updateRecord(r.id, { status: 'overdue' }).catch(console.error);
-        return { ...r, status: 'overdue' as const };
-      }
-      return r;
-    });
-    setRecords(updated);
-    // Swallow error silently — just reflect in UI
-    void changed;
+  const refresh = useCallback(async () => {
+    const data = await fetchRecords(RECORDS_LIMIT);
+    setRecords(data);
   }, []);
 
   const borrowItem = useCallback(
@@ -58,7 +72,7 @@ export function useBorrowing() {
       borrowDate: string;
       expectedReturnDate: string;
     }) => {
-      // Check stock from Supabase
+      // 检查库存
       const item = await fetchItemById(data.itemId);
       if (!item || item.availableQty < data.quantity) {
         return false;
@@ -70,55 +84,54 @@ export function useBorrowing() {
         status: 'borrowed',
       };
 
-      // Create record + decrement stock
-      await createRecord(record);
-      await updateItem(data.itemId, {
-        availableQty: item.availableQty - data.quantity,
-      });
+      // 创建记录 + 扣减库存（可并行）
+      await Promise.all([
+        createRecord(record),
+        updateItem(data.itemId, {
+          availableQty: item.availableQty - data.quantity,
+        }),
+      ]);
 
-      // Refresh local state
-      const freshRecords = await fetchRecords();
-      setRecords(freshRecords);
-
+      // 刷新本地状态
+      await refresh();
       return true;
     },
-    [],
+    [refresh],
   );
 
   const returnItem = useCallback(
     async (recordId: string, damagedQty?: number, damagedNote?: string) => {
-      const allRecords = await fetchRecords();
+      const allRecords = await fetchRecords(RECORDS_LIMIT);
       const record = allRecords.find((r) => r.id === recordId);
       if (!record || record.status === 'returned') return false;
 
       const now = nowISO();
       const safeDamagedQty = Math.min(damagedQty || 0, record.quantity);
 
-      // Update record
-      await updateRecord(recordId, {
-        status: 'returned',
-        actualReturnDate: now,
-        damagedQty: safeDamagedQty > 0 ? safeDamagedQty : undefined,
-        damagedNote: damagedNote || undefined,
-      });
-
-      // Update item quantities
       const item = await fetchItemById(record.itemId);
-      if (item) {
-        const restoredQty = record.quantity - safeDamagedQty;
-        await updateItem(record.itemId, {
+      if (!item) return false;
+
+      const restoredQty = record.quantity - safeDamagedQty;
+
+      // 更新记录 + 更新库存 并行执行
+      await Promise.all([
+        updateRecord(recordId, {
+          status: 'returned',
+          actualReturnDate: now,
+          damagedQty: safeDamagedQty > 0 ? safeDamagedQty : undefined,
+          damagedNote: damagedNote || undefined,
+        }),
+        updateItem(record.itemId, {
           availableQty: item.availableQty + restoredQty,
           quantity: item.quantity - safeDamagedQty,
-        });
-      }
+        }),
+      ]);
 
-      // Refresh local state
-      const freshRecords = await fetchRecords();
-      setRecords(freshRecords);
-
+      // 刷新本地状态
+      await refresh();
       return true;
     },
-    [],
+    [refresh],
   );
 
   const searchRecords = useCallback(
@@ -141,12 +154,12 @@ export function useBorrowing() {
     [records],
   );
 
-  return {
-    records,
-    loading,
-    borrowItem,
-    returnItem,
-    searchRecords,
-    refreshRecords: () => refreshOverdue(),
-  };
+  return useMemo(
+    () => ({
+      records, loading, error,
+      borrowItem, returnItem, searchRecords,
+      refreshRecords: refresh,
+    }),
+    [records, loading, error, borrowItem, returnItem, searchRecords, refresh],
+  );
 }

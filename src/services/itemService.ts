@@ -1,6 +1,11 @@
 import { supabase } from '../lib/supabase';
 import type { Item, ItemCategory } from '../types';
 
+// 列表查询用轻量字段：排除 photo 和 notes，减少 payload 体积
+const LIST_COLUMNS = 'id, name, code, category, quantity, available_qty, location, created_at, updated_at';
+// 详情查询用全字段
+const FULL_COLUMNS = '*';
+
 // Map DB column names (snake_case) to JS fields (camelCase)
 function rowToItem(row: Record<string, unknown>): Item {
   return {
@@ -11,6 +16,7 @@ function rowToItem(row: Record<string, unknown>): Item {
     quantity: row.quantity as number,
     availableQty: row.available_qty as number,
     location: row.location as string,
+    // photo 和 notes 只在详情查询时返回；列表查询时为空
     photo: row.photo as string | undefined,
     notes: row.notes as string | undefined,
     createdAt: row.created_at as string,
@@ -34,11 +40,25 @@ function itemToRow(item: Partial<Item> & { id: string }): Record<string, unknown
   };
 }
 
+/** 轻量查询：列表页用，排除 photo 和 notes，默认返回最近 200 条 */
+export async function fetchItemsLite(limit = 200): Promise<Item[]> {
+  const { data, error } = await supabase
+    .from('items')
+    .select(LIST_COLUMNS)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return (data ?? []).map(rowToItem);
+}
+
+/** 全量查询：Dashboard 统计用，不含 photo（统计不需要图片） */
 export async function fetchItems(): Promise<Item[]> {
   const { data, error } = await supabase
     .from('items')
-    .select('*')
-    .order('created_at', { ascending: false });
+    .select(LIST_COLUMNS)
+    .order('created_at', { ascending: false })
+    .limit(500);
 
   if (error) throw error;
   return (data ?? []).map(rowToItem);

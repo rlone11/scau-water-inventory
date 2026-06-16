@@ -11,8 +11,11 @@ import {
   SettingOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import WaterBackground from './WaterBackground';
 import BackToTop from './BackToTop';
+import BreadcrumbNav from './BreadcrumbNav';
+import QuickNav from './QuickNav';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -28,6 +31,8 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAdmin, logout } = useAuth();
+
+  useKeyboardShortcuts();
 
   const selectedKey = '/' + location.pathname.split('/').filter(Boolean)[0] || '/';
 
@@ -230,6 +235,7 @@ export default function MainLayout() {
 
         {/* Page content */}
         <Content style={{ padding: '16px 24px', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+          <BreadcrumbNav />
           <Outlet />
         </Content>
 
@@ -255,6 +261,7 @@ export default function MainLayout() {
         </div>
       </AntLayout>
 
+      <QuickNav />
       <BackToTop />
 
       {/* Mobile responsive styles */}

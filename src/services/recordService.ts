@@ -41,11 +41,12 @@ function recordToRow(rec: Partial<BorrowRecord> & { id: string }): Record<string
   };
 }
 
-export async function fetchRecords(): Promise<BorrowRecord[]> {
+export async function fetchRecords(limit = 500): Promise<BorrowRecord[]> {
   const { data, error } = await supabase
     .from('borrow_records')
     .select('*')
-    .order('borrow_date', { ascending: false });
+    .order('borrow_date', { ascending: false })
+    .limit(limit);
 
   if (error) throw error;
   return (data ?? []).map(rowToRecord);

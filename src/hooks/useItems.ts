@@ -1,16 +1,20 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { Item, ItemCategory } from '../types';
 import { generateId, nowISO } from '../utils/storage';
-import { fetchItems, createItem, updateItem, deleteItem } from '../services/itemService';
+import { fetchItemsLite, createItem, updateItem, deleteItem } from '../services/itemService';
 
 export function useItems() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Load from Supabase on mount
+  // 首次加载：用轻量查询，排除 photo/notes，大幅减少 payload
   useEffect(() => {
     let cancelled = false;
-    fetchItems()
+    setLoading(true);
+    setError(null);
+
+    fetchItemsLite()
       .then((data) => {
         if (!cancelled) {
           setItems(data);
@@ -19,13 +23,16 @@ export function useItems() {
       })
       .catch((err) => {
         console.error('Failed to load items:', err);
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setError(err.message || '加载失败');
+          setLoading(false);
+        }
       });
     return () => { cancelled = true; };
   }, []);
 
   const refresh = useCallback(async () => {
-    const data = await fetchItems();
+    const data = await fetchItemsLite();
     setItems(data);
   }, []);
 
@@ -82,5 +89,9 @@ export function useItems() {
     [items],
   );
 
-  return { items, loading, addItem, updateItem: updateOne, deleteItem: removeItem, searchItems };
+  // 稳定返回值引用，避免子组件不必要的 re-render
+  return useMemo(
+    () => ({ items, loading, error, addItem, updateItem: updateOne, deleteItem: removeItem, searchItems, refresh }),
+    [items, loading, error, addItem, updateOne, removeItem, searchItems, refresh],
+  );
 }
