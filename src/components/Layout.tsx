@@ -16,6 +16,7 @@ import WaterBackground from './WaterBackground';
 import BackToTop from './BackToTop';
 import BreadcrumbNav from './BreadcrumbNav';
 import QuickNav from './QuickNav';
+import RefreshButton from './RefreshButton';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -201,7 +202,8 @@ export default function MainLayout() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <RefreshButton />
             {isAdmin ? (
               <Dropdown
                 menu={{

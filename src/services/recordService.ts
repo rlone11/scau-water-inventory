@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { BorrowRecord, BorrowStatus } from '../types';
+import { cacheGet, cacheSet, cacheInvalidate, CACHE_KEYS } from '../lib/cache';
 
 function rowToRecord(row: Record<string, unknown>): BorrowRecord {
   return {
@@ -41,7 +42,15 @@ function recordToRow(rec: Partial<BorrowRecord> & { id: string }): Record<string
   };
 }
 
+function invalidateRecordsCache(): void {
+  cacheInvalidate(CACHE_KEYS.RECORDS_LIST);
+}
+
+/** 查询借还记录列表（带缓存） */
 export async function fetchRecords(limit = 500): Promise<BorrowRecord[]> {
+  const cached = cacheGet<BorrowRecord[]>(CACHE_KEYS.RECORDS_LIST);
+  if (cached) return cached;
+
   const { data, error } = await supabase
     .from('borrow_records')
     .select('*')
@@ -49,9 +58,12 @@ export async function fetchRecords(limit = 500): Promise<BorrowRecord[]> {
     .limit(limit);
 
   if (error) throw error;
-  return (data ?? []).map(rowToRecord);
+  const records = (data ?? []).map(rowToRecord);
+  cacheSet(CACHE_KEYS.RECORDS_LIST, records);
+  return records;
 }
 
+/** 创建借用记录 */
 export async function createRecord(rec: BorrowRecord): Promise<BorrowRecord> {
   const row = recordToRow(rec);
   const { data, error } = await supabase
@@ -61,9 +73,11 @@ export async function createRecord(rec: BorrowRecord): Promise<BorrowRecord> {
     .single();
 
   if (error) throw error;
+  invalidateRecordsCache();
   return rowToRecord(data as Record<string, unknown>);
 }
 
+/** 更新记录 */
 export async function updateRecord(id: string, updates: Partial<BorrowRecord>): Promise<void> {
   const row = recordToRow({ id, ...updates });
   const { error } = await supabase
@@ -72,8 +86,10 @@ export async function updateRecord(id: string, updates: Partial<BorrowRecord>): 
     .eq('id', id);
 
   if (error) throw error;
+  invalidateRecordsCache();
 }
 
+/** 按 ID 查单条记录 */
 export async function fetchRecordById(id: string): Promise<BorrowRecord | null> {
   const { data, error } = await supabase
     .from('borrow_records')

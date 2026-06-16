@@ -9,6 +9,7 @@ import {
   FireOutlined,
 } from '@ant-design/icons';
 import { motion, AnimatePresence, useSpring, useTransform } from 'framer-motion';
+import { Spin } from 'antd';
 import TiltCard from '../components/TiltCard';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
@@ -70,12 +71,14 @@ function CountUpNumber({ target, duration = 1.5 }: { target: number; duration?: 
 }
 
 export default function DashboardPage() {
-  const { items } = useItems();
-  const { records } = useBorrowing();
+  const { items, loading: itemsLoading } = useItems();
+  const { records, loading: recordsLoading } = useBorrowing();
   const navigate = useNavigate();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
+
+  const isLoading = itemsLoading || recordsLoading;
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -164,7 +167,17 @@ export default function DashboardPage() {
         </Card>
       </motion.div>
 
+      {/* Loading */}
+      {isLoading && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300, flexDirection: 'column', gap: 16 }}>
+          <Spin size="large" />
+          <span style={{ color: '#94A3B8', fontSize: 14 }}>正在加载统计数据...</span>
+        </div>
+      )}
+
       {/* Stat cards with count-up + spring stagger */}
+      {!isLoading && (
+        <>
       <motion.div
         initial="hidden"
         animate={mounted ? 'visible' : 'hidden'}
@@ -316,6 +329,8 @@ export default function DashboardPage() {
           )}
         </Card>
       </motion.div>
+        </>
+      )}
     </div>
   );
 }

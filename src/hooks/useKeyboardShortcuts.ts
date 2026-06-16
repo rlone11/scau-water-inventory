@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { triggerRefresh } from '../lib/events';
 
 /** 检查焦点是否在输入元素上（避免快捷键干扰打字） */
 function isInputFocused(): boolean {
@@ -17,6 +18,7 @@ function isInputFocused(): boolean {
  * - Alt+2 → 物品管理
  * - Alt+3 → 借记记录
  * - Alt+← → 返回上一页
+ * - Alt+R → 刷新全部数据
  */
 export function useKeyboardShortcuts() {
   const navigate = useNavigate();
@@ -46,6 +48,11 @@ export function useKeyboardShortcuts() {
         case 'ArrowLeft':
           e.preventDefault();
           window.history.back();
+          break;
+        case 'r':
+        case 'R':
+          e.preventDefault();
+          triggerRefresh();
           break;
         default:
           break;
