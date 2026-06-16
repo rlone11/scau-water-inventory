@@ -14,23 +14,32 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+const ADMIN_PASSWORD = '0313';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
+  // Always ensure the password is set
+  const stored = getAdminPassword();
+  if (!stored) {
+    setAdminPassword(ADMIN_PASSWORD);
+  }
+
   const [role, setRole] = useState<UserRole>(() => {
     const saved = getCurrentRole();
     if (saved === 'admin') return 'admin';
     return null;
   });
 
-  const [hasPassword, setHasPassword] = useState(() => !!getAdminPassword());
+  // Password is always pre-set, never "first time"
+  const hasPassword = true;
 
   useEffect(() => {
     setCurrentRole(role);
   }, [role]);
 
   const login = useCallback((password: string): boolean => {
-    const stored = getAdminPassword();
-    if (stored && stored === password) {
+    if (password === ADMIN_PASSWORD) {
       setRole('admin');
+      setAdminPassword(ADMIN_PASSWORD);
       return true;
     }
     return false;
@@ -42,7 +51,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setFirstPassword = useCallback((password: string) => {
     setAdminPassword(password);
-    setHasPassword(true);
     setRole('admin');
   }, []);
 

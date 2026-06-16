@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Card, Form, Input, Button, message, Typography } from 'antd';
-import { LockOutlined, SafetyOutlined } from '@ant-design/icons';
+import { LockOutlined } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
 import LoginBackground from '../components/LoginBackground';
 
@@ -20,31 +20,20 @@ const floatingDrops = [
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
-  const { login, setFirstPassword, hasPassword } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
   const [inputFocused, setInputFocused] = useState(false);
   const [inputCenter, setInputCenter] = useState<{ x: number; y: number } | null>(null);
   const formCardRef = useRef<HTMLDivElement>(null);
 
-  const handleSubmit = (values: { password: string; confirmPassword?: string }) => {
+  const handleSubmit = (values: { password: string }) => {
     setLoading(true);
     setTimeout(() => {
-      if (!hasPassword) {
-        if (values.password !== values.confirmPassword) {
-          message.error('两次密码不一致');
-          setLoading(false);
-          return;
-        }
-        setFirstPassword(values.password);
-        message.success('管理员密码设置成功！');
+      if (login(values.password)) {
+        message.success('管理员登录成功！');
         navigate('/');
       } else {
-        if (login(values.password)) {
-          message.success('管理员登录成功！');
-          navigate('/');
-        } else {
-          message.error('密码错误');
-        }
+        message.error('密码错误');
       }
       setLoading(false);
     }, 500);
@@ -161,7 +150,7 @@ export default function LoginPage() {
             水利水电学院
           </Title>
           <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>
-            {hasPassword ? '管理员登录' : '首次设置管理员密码'}
+            管理员登录
           </Text>
         </div>
 
@@ -185,7 +174,7 @@ export default function LoginPage() {
             >
               <Input.Password
                 prefix={<LockOutlined />}
-                placeholder={hasPassword ? '请输入管理员密码' : '设置管理员密码（至少4位）'}
+                placeholder="请输入管理员密码"
                 onFocus={() => {
                   setInputFocused(true);
                   const el = formCardRef.current;
@@ -198,24 +187,6 @@ export default function LoginPage() {
               />
             </Form.Item>
 
-            {!hasPassword && (
-              <Form.Item
-                name="confirmPassword"
-                rules={[
-                  { required: true, message: '请确认密码' },
-                  ({ getFieldValue }) => ({
-                    validator: (_: unknown, value: string) => {
-                      if (!value || getFieldValue('password') === value) {
-                        return Promise.resolve();
-                      }
-                      return Promise.reject(new Error('两次密码不一致'));
-                    },
-                  }),
-                ]}
-              >
-                <Input.Password prefix={<SafetyOutlined />} placeholder="确认密码" />
-              </Form.Item>
-            )}
 
             <Form.Item style={{ marginBottom: 0 }}>
               <Button
@@ -231,7 +202,7 @@ export default function LoginPage() {
                   border: 'none',
                 }}
               >
-                {hasPassword ? '登录' : '设置密码并进入'}
+                登录
               </Button>
             </Form.Item>
           </Form>
