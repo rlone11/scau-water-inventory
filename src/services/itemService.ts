@@ -23,19 +23,25 @@ function rowToItem(row: Record<string, unknown>): Item {
 }
 
 function itemToRow(item: Partial<Item> & { id: string }): Record<string, unknown> {
-  return {
-    id: item.id,
-    name: item.name,
-    code: item.code,
-    category: item.category,
-    quantity: item.quantity,
-    available_qty: item.availableQty,
-    location: item.location,
-    photo: item.photo ?? null,
-    notes: item.notes ?? null,
-    created_at: item.createdAt ?? new Date().toISOString(),
-    updated_at: item.updatedAt ?? new Date().toISOString(),
-  };
+  const row: Record<string, unknown> = {};
+  // 只包含明确传入的字段，避免 undefined 覆盖数据库已有值
+  const map: [string, unknown][] = [
+    ['id', item.id],
+    ['name', item.name],
+    ['code', item.code],
+    ['category', item.category],
+    ['quantity', item.quantity],
+    ['available_qty', item.availableQty],
+    ['location', item.location],
+    ['photo', item.photo],
+    ['notes', item.notes],
+    ['created_at', item.createdAt],
+    ['updated_at', item.updatedAt],
+  ];
+  for (const [key, val] of map) {
+    if (val !== undefined) row[key] = val === null ? null : val;
+  }
+  return row;
 }
 
 // ===== 缓存辅助 =====

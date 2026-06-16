@@ -23,23 +23,29 @@ function rowToRecord(row: Record<string, unknown>): BorrowRecord {
 }
 
 function recordToRow(rec: Partial<BorrowRecord> & { id: string }): Record<string, unknown> {
-  return {
-    id: rec.id,
-    item_id: rec.itemId,
-    item_name: rec.itemName,
-    borrower_name: rec.borrowerName,
-    borrower_id: rec.borrowerId,
-    phone: rec.phone,
-    department: rec.department,
-    purpose: rec.purpose,
-    quantity: rec.quantity,
-    borrow_date: rec.borrowDate,
-    expected_return_date: rec.expectedReturnDate,
-    actual_return_date: rec.actualReturnDate ?? null,
-    status: rec.status,
-    damaged_qty: rec.damagedQty ?? null,
-    damaged_note: rec.damagedNote ?? null,
-  };
+  const row: Record<string, unknown> = {};
+  // 只包含明确传入的字段，避免 undefined 覆盖数据库已有值
+  const map: [string, unknown][] = [
+    ['id', rec.id],
+    ['item_id', rec.itemId],
+    ['item_name', rec.itemName],
+    ['borrower_name', rec.borrowerName],
+    ['borrower_id', rec.borrowerId],
+    ['phone', rec.phone],
+    ['department', rec.department],
+    ['purpose', rec.purpose],
+    ['quantity', rec.quantity],
+    ['borrow_date', rec.borrowDate],
+    ['expected_return_date', rec.expectedReturnDate],
+    ['actual_return_date', rec.actualReturnDate],
+    ['damaged_qty', rec.damagedQty],
+    ['damaged_note', rec.damagedNote],
+    ['status', rec.status],
+  ];
+  for (const [key, val] of map) {
+    if (val !== undefined) row[key] = val;
+  }
+  return row;
 }
 
 function invalidateRecordsCache(): void {
