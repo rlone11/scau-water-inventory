@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
-import type { BorrowRecord } from '../types';
-import { STATUS_LABELS } from '../types';
+import type { BorrowRecord, Item, ItemCategory } from '../types';
+import { STATUS_LABELS, CATEGORY_LABELS } from '../types';
 
 export function exportRecordsToExcel(records: BorrowRecord[]): void {
   const data = records.map((r) => ({
@@ -30,4 +30,39 @@ export function exportRecordsToExcel(records: BorrowRecord[]): void {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '借记记录');
   XLSX.writeFile(wb, `借用记录_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+export function exportItemsToExcel(items: Item[]): void {
+  const data = items.map((item) => ({
+    '编号': item.code,
+    '名称': item.name,
+    '分类': CATEGORY_LABELS[item.category],
+    '总数': item.quantity,
+    '可借数量': item.availableQty,
+    '已借出': item.quantity - item.availableQty,
+    '存放位置': item.location,
+    '备注': item.notes || '',
+    '创建时间': item.createdAt.slice(0, 10),
+    '更新时间': item.updatedAt.slice(0, 10),
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(data);
+
+  // 设置列宽
+  ws['!cols'] = [
+    { wch: 14 },  // 编号
+    { wch: 20 },  // 名称
+    { wch: 16 },  // 分类
+    { wch: 8 },   // 总数
+    { wch: 10 },  // 可借数量
+    { wch: 8 },   // 已借出
+    { wch: 16 },  // 存放位置
+    { wch: 24 },  // 备注
+    { wch: 12 },  // 创建时间
+    { wch: 12 },  // 更新时间
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '物品清单');
+  XLSX.writeFile(wb, `物品清单_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }

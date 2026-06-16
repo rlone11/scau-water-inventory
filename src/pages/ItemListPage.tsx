@@ -7,18 +7,19 @@ import {
 import {
   SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
   SwapOutlined, AppstoreOutlined, UnorderedListOutlined,
-  EnvironmentOutlined,
+  EnvironmentOutlined, DownloadOutlined,
 } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useItems } from '../hooks/useItems';
 import { useAuth } from '../contexts/AuthContext';
 import { CATEGORY_LABELS, CATEGORY_COLORS, type ItemCategory, type Item } from '../types';
+import { exportItemsToExcel } from '../utils/export';
 
 const { Title } = Typography;
 const { Meta } = Card;
 
 export default function ItemListPage() {
-  const { deleteItem, searchItems, loading, error } = useItems();
+  const { deleteItem, searchItems, loading, error, items } = useItems();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
 
@@ -35,6 +36,15 @@ export default function ItemListPage() {
   const handleDelete = (id: string) => {
     deleteItem(id);
     message.success('物品已删除');
+  };
+
+  const handleExport = () => {
+    if (filteredItems.length === 0) {
+      message.warning('没有可导出的物品数据');
+      return;
+    }
+    exportItemsToExcel(filteredItems);
+    message.success(`已导出 ${filteredItems.length} 条物品记录`);
   };
 
   const columns = [
@@ -111,9 +121,14 @@ export default function ItemListPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0, color: '#0C4A6E' }}>物品管理</Title>
         {isAdmin && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/items/add')} style={{ background: 'linear-gradient(135deg, #0EA5E9, #0284C7)', border: 'none' }}>
-            添加物品
-          </Button>
+          <Space>
+            <Button icon={<DownloadOutlined />} onClick={handleExport}>
+              导出 Excel
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/items/add')} style={{ background: 'linear-gradient(135deg, #0EA5E9, #0284C7)', border: 'none' }}>
+              添加物品
+            </Button>
+          </Space>
         )}
       </div>
 
