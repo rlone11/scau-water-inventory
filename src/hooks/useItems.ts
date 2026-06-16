@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { Item, ItemCategory } from '../types';
 import { generateId, nowISO } from '../utils/storage';
-import { fetchItemsLite, createItem, updateItem, deleteItem } from '../services/itemService';
+import { fetchItemsLite, fetchItemPhotos, createItem, updateItem, deleteItem } from '../services/itemService';
 import { cacheClear } from '../lib/cache';
 import { REFRESH_EVENT } from '../lib/events';
 
@@ -10,18 +10,31 @@ export function useItems() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 首次加载：用轻量查询（含缓存）
+  // ===== 首次加载：两阶段 =====
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
 
+    // 阶段 1：快速加载列表（不含 photo，秒开）
     fetchItemsLite()
       .then((data) => {
-        if (!cancelled) {
-          setItems(data);
-          setLoading(false);
-        }
+        if (cancelled) return;
+        setItems(data);
+        setLoading(false); // 列表就绪，UI 立即渲染
+
+        // 阶段 2：后台拉取图片，静默合并
+        fetchItemPhotos()
+          .then((photoMap) => {
+            if (cancelled || photoMap.size === 0) return;
+            setItems((prev) =>
+              prev.map((item) => {
+                const photo = photoMap.get(item.id);
+                return photo ? { ...item, photo } : item;
+              }),
+            );
+          })
+          .catch((err) => console.error('图片加载失败（列表仍可用）:', err));
       })
       .catch((err) => {
         console.error('Failed to load items:', err);
@@ -35,33 +48,51 @@ export function useItems() {
 
   // 监听全局刷新事件
   useEffect(() => {
-    const handler = () => { forceRefresh(); };
+    const handler = () => {
+      cacheClear();
+      setLoading(true);
+      setError(null);
+      fetchItemsLite()
+        .then((data) => {
+          setItems(data);
+          setLoading(false);
+          return fetchItemPhotos();
+        })
+        .then((photoMap) => {
+          if (!photoMap || photoMap.size === 0) return;
+          setItems((prev) =>
+            prev.map((item) => {
+              const photo = photoMap.get(item.id);
+              return photo ? { ...item, photo } : item;
+            }),
+          );
+        })
+        .catch((err) => {
+          console.error('刷新失败:', err);
+          setError((err as Error).message || '刷新失败');
+          setLoading(false);
+        });
+    };
     window.addEventListener(REFRESH_EVENT, handler);
     return () => window.removeEventListener(REFRESH_EVENT, handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /** 强制刷新（跳过缓存） */
-  const forceRefresh = useCallback(async () => {
-    cacheClear();
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchItemsLite();
-      setItems(data);
-      setLoading(false);
-    } catch (err) {
-      setError((err as Error).message || '刷新失败');
-      setLoading(false);
-    }
   }, []);
 
   const refresh = useCallback(async () => {
     try {
       const data = await fetchItemsLite();
       setItems(data);
+      // 后台拉图片
+      const photoMap = await fetchItemPhotos();
+      if (photoMap.size > 0) {
+        setItems((prev) =>
+          prev.map((item) => {
+            const photo = photoMap.get(item.id);
+            return photo ? { ...item, photo } : item;
+          }),
+        );
+      }
     } catch {
-      // 静默失败 — 缓存可能过期但保留旧数据
+      // 静默失败 — 保留旧数据
     }
   }, []);
 
@@ -77,15 +108,12 @@ export function useItems() {
         updatedAt: now,
       };
 
-      // 乐观：立即插入本地列表
       setItems((prev) => [optimisticItem, ...prev]);
 
       try {
         await createItem(optimisticItem);
-        // 后台静默刷新（从缓存拿会很快）
         await refresh();
       } catch (err) {
-        // 回滚
         setItems((prev) => prev.filter((item) => item.id !== optimisticItem.id));
         throw err;
       }
@@ -95,7 +123,6 @@ export function useItems() {
 
   const updateOne = useCallback(
     async (id: string, data: Partial<Omit<Item, 'id' | 'createdAt'>>) => {
-      // 保存快照用于回滚
       let snapshot: Item | undefined;
       setItems((prev) => {
         const idx = prev.findIndex((item) => item.id === id);
@@ -110,7 +137,6 @@ export function useItems() {
         await updateItem(id, { ...data, updatedAt: nowISO() });
         await refresh();
       } catch {
-        // 回滚
         if (snapshot) {
           setItems((prev) => {
             const idx = prev.findIndex((item) => item.id === id);
@@ -139,7 +165,6 @@ export function useItems() {
       try {
         await deleteItem(id);
       } catch {
-        // 回滚
         if (snapshot) {
           setItems((prev) => [...prev, snapshot!]);
         }
@@ -175,8 +200,8 @@ export function useItems() {
     () => ({
       items, loading, error,
       addItem, updateItem: updateOne, deleteItem: removeItem,
-      searchItems, refresh, forceRefresh,
+      searchItems, refresh,
     }),
-    [items, loading, error, addItem, updateOne, removeItem, searchItems, refresh, forceRefresh],
+    [items, loading, error, addItem, updateOne, removeItem, searchItems, refresh],
   );
 }

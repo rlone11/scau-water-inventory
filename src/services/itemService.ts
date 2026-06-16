@@ -2,8 +2,8 @@ import { supabase } from '../lib/supabase';
 import type { Item, ItemCategory } from '../types';
 import { cacheGet, cacheSet, cacheInvalidate, CACHE_KEYS } from '../lib/cache';
 
-// 列表查询列：含 photo（卡片视图需要），排除 notes（仅详情需要）
-const LIST_COLUMNS = 'id, name, code, category, quantity, available_qty, location, photo, created_at, updated_at';
+// 列表快速查询：排除 photo（base64大字段）和 notes，保证首屏秒开
+const LIST_COLUMNS = 'id, name, code, category, quantity, available_qty, location, created_at, updated_at';
 
 // Map DB column names (snake_case) to JS fields (camelCase)
 function rowToItem(row: Record<string, unknown>): Item {
@@ -48,6 +48,7 @@ function itemToRow(item: Partial<Item> & { id: string }): Record<string, unknown
 
 function invalidateItemsCache(): void {
   cacheInvalidate(CACHE_KEYS.ITEMS_LIST);
+  cacheInvalidate(CACHE_KEYS.ITEMS_PHOTOS);
 }
 
 function invalidateItemCache(id: string): void {
@@ -77,6 +78,26 @@ export async function fetchItemsLite(limit = 200): Promise<Item[]> {
 /** 兼容旧接口：等同 fetchItemsLite */
 export async function fetchItems(): Promise<Item[]> {
   return fetchItemsLite(500);
+}
+
+/** 单独拉取图片映射 { id → photo } — 在列表加载完成后异步调用 */
+export async function fetchItemPhotos(): Promise<Map<string, string>> {
+  const cached = cacheGet<Map<string, string>>(CACHE_KEYS.ITEMS_PHOTOS);
+  if (cached) return cached;
+
+  const { data, error } = await supabase
+    .from('items')
+    .select('id, photo')
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  if (error) throw error;
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row.photo) map.set(row.id as string, row.photo as string);
+  }
+  cacheSet(CACHE_KEYS.ITEMS_PHOTOS, map, 60_000); // 图片缓存 60 秒
+  return map;
 }
 
 /** 按 ID 查单个物品（全字段），带缓存 */

@@ -7,6 +7,7 @@ import { UploadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { useItems } from '../hooks/useItems';
 import { useAuth } from '../contexts/AuthContext';
+import { fetchItemById } from '../services/itemService';
 import { CATEGORY_LABELS, type ItemCategory } from '../types';
 
 const { Title } = Typography;
@@ -15,25 +16,41 @@ const { TextArea } = Input;
 export default function ItemFormPage() {
   const { id } = useParams<{ id: string }>();
   const isEdit = !!id;
-  const { items, loading: itemsLoading, addItem, updateItem } = useItems();
+  const { items, addItem, updateItem } = useItems();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const [photoBase64, setPhotoBase64] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
+  // 编辑模式：用 fetchItemById 获取完整数据（含 photo 和 notes）
   useEffect(() => {
-    if (isEdit && id && !itemsLoading) {
-      const item = items.find((i) => i.id === id);
-      if (item) {
-        form.setFieldsValue(item);
-        setPhotoBase64(item.photo || '');
-      } else {
-        message.error('物品不存在');
-        navigate('/items');
-      }
-    }
-  }, [id, isEdit, items, itemsLoading, form, navigate]);
+    if (!isEdit || !id) return;
+
+    let cancelled = false;
+    fetchItemById(id)
+      .then((item) => {
+        if (cancelled) return;
+        if (item) {
+          form.setFieldsValue(item);
+          setPhotoBase64(item.photo || '');
+        } else {
+          message.error('物品不存在');
+          navigate('/items');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          // 回退：尝试从缓存列表找
+          const cached = items.find((i) => i.id === id);
+          if (cached) {
+            form.setFieldsValue(cached);
+            setPhotoBase64(cached.photo || '');
+          }
+        }
+      });
+    return () => { cancelled = true; };
+  }, [id, isEdit, form, navigate, items]);
 
   const handleImageUpload = (file: File): boolean => {
     if (!file.type.startsWith('image/')) {

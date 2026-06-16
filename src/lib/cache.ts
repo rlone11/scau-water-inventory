@@ -59,6 +59,7 @@ export function cacheSize(): number {
 // ===== 预定义缓存键常量 =====
 export const CACHE_KEYS = {
   ITEMS_LIST: 'items:list',
+  ITEMS_PHOTOS: 'items:photos',
   ITEM_BY_ID: (id: string) => `items:${id}`,
   RECORDS_LIST: 'records:list',
 } as const;
