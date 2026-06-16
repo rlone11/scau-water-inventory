@@ -90,16 +90,19 @@ export default function ItemFormPage() {
   const handleSubmit = (values: Record<string, unknown>) => {
     setLoading(true);
     setTimeout(() => {
+      const existingItem = isEdit ? items.find((i) => i.id === id) : null;
+
       const data = {
         name: values.name as string,
         code: values.code as string,
         category: values.category as ItemCategory,
         quantity: values.quantity as number,
         availableQty: isEdit
-          ? (values.quantity as number) - ((items.find((i) => i.id === id)?.quantity || 0) - (items.find((i) => i.id === id)?.availableQty || 0))
+          ? (values.quantity as number) - ((existingItem?.quantity || 0) - (existingItem?.availableQty || 0))
           : (values.quantity as number),
         location: values.location as string,
-        photo: photoBase64 || undefined,
+        // 保护原图：有新图用新图，否则保留数据库中的原图
+        photo: photoBase64 || existingItem?.photo || undefined,
         notes: values.notes as string | undefined,
       };
 

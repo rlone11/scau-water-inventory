@@ -2,8 +2,8 @@ import { supabase } from '../lib/supabase';
 import type { Item, ItemCategory } from '../types';
 import { cacheGet, cacheSet, cacheInvalidate, CACHE_KEYS } from '../lib/cache';
 
-// 列表查询用轻量字段：排除 photo 和 notes，减少 payload 体积
-const LIST_COLUMNS = 'id, name, code, category, quantity, available_qty, location, created_at, updated_at';
+// 列表查询列：含 photo（卡片视图需要），排除 notes（仅详情需要）
+const LIST_COLUMNS = 'id, name, code, category, quantity, available_qty, location, photo, created_at, updated_at';
 
 // Map DB column names (snake_case) to JS fields (camelCase)
 function rowToItem(row: Record<string, unknown>): Item {
