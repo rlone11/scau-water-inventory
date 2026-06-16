@@ -4,6 +4,7 @@ import zhCN from 'antd/locale/zh_CN';
 import theme from './theme';
 import { AuthProvider } from './contexts/AuthContext';
 import MainLayout from './components/Layout';
+import CursorEffects from './components/CursorEffects';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ItemListPage from './pages/ItemListPage';
@@ -17,6 +18,7 @@ function App() {
     <ConfigProvider theme={theme} locale={zhCN}>
       <AntApp>
         <AuthProvider>
+          <CursorEffects />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route element={<MainLayout />}>

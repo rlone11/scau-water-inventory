@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Card, Form, Input, Button, message, Typography } from 'antd';
 import { LockOutlined, SafetyOutlined } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
+import LoginBackground from '../components/LoginBackground';
 
 const { Title, Text } = Typography;
 
@@ -21,6 +22,9 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const { login, setFirstPassword, hasPassword } = useAuth();
   const navigate = useNavigate();
+  const [inputFocused, setInputFocused] = useState(false);
+  const [inputCenter, setInputCenter] = useState<{ x: number; y: number } | null>(null);
+  const formCardRef = useRef<HTMLDivElement>(null);
 
   const handleSubmit = (values: { password: string; confirmPassword?: string }) => {
     setLoading(true);
@@ -59,8 +63,15 @@ export default function LoginPage() {
         overflow: 'hidden',
       }}
     >
+      {/* Underwater scene canvas */}
+      <LoginBackground
+        inputFocused={inputFocused}
+        inputCenterX={inputCenter?.x ?? null}
+        inputCenterY={inputCenter?.y ?? null}
+      />
+
       {/* Floating water drops */}
-      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 2 }}>
         {floatingDrops.map((drop, i) => (
           <motion.img
             key={i}
@@ -154,6 +165,7 @@ export default function LoginPage() {
           </Text>
         </div>
 
+        <div ref={formCardRef}>
         <Card
           style={{
             borderRadius: 16,
@@ -174,6 +186,15 @@ export default function LoginPage() {
               <Input.Password
                 prefix={<LockOutlined />}
                 placeholder={hasPassword ? '请输入管理员密码' : '设置管理员密码（至少4位）'}
+                onFocus={() => {
+                  setInputFocused(true);
+                  const el = formCardRef.current;
+                  if (el) {
+                    const rect = el.getBoundingClientRect();
+                    setInputCenter({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+                  }
+                }}
+                onBlur={() => setInputFocused(false)}
               />
             </Form.Item>
 
@@ -215,6 +236,7 @@ export default function LoginPage() {
             </Form.Item>
           </Form>
         </Card>
+        </div>
 
         <div style={{ textAlign: 'center', marginTop: 16 }}>
           <Button type="link" onClick={() => navigate('/')} style={{ color: 'rgba(255,255,255,0.6)' }}>

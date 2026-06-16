@@ -8,7 +8,8 @@ import {
   ExclamationCircleOutlined,
   FireOutlined,
 } from '@ant-design/icons';
-import { motion, useSpring, useTransform } from 'framer-motion';
+import { motion, AnimatePresence, useSpring, useTransform } from 'framer-motion';
+import TiltCard from '../components/TiltCard';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -31,12 +32,41 @@ const statCards = [
 function CountUpNumber({ target, duration = 1.5 }: { target: number; duration?: number }) {
   const spring = useSpring(0, { stiffness: 80, damping: 20, duration: duration * 1000 });
   const display = useTransform(spring, (v) => Math.round(v));
+  const [splash, setSplash] = useState(false);
 
   useEffect(() => {
     spring.set(target);
-  }, [target, spring]);
+    setSplash(false);
+    const timer = setTimeout(() => setSplash(true), duration * 1000 + 100);
+    return () => clearTimeout(timer);
+  }, [target, spring, duration]);
 
-  return <motion.span>{display}</motion.span>;
+  return (
+    <span style={{ position: 'relative', display: 'inline-block' }}>
+      <motion.span>{display}</motion.span>
+      {/* Splash droplet */}
+      <AnimatePresence>
+        {splash && (
+          <motion.span
+            initial={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+            animate={{ opacity: 0, y: -18, x: 6, scale: 0.3 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.45, ease: 'easeOut' }}
+            style={{
+              position: 'absolute',
+              top: -4,
+              right: -8,
+              width: 8,
+              height: 10,
+              borderRadius: '50% 50% 50% 50% / 60% 60% 40% 40%',
+              background: '#0EA5E9',
+              pointerEvents: 'none',
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </span>
+  );
 }
 
 export default function DashboardPage() {
@@ -146,7 +176,8 @@ export default function DashboardPage() {
         <Row gutter={[16, 16]}>
           {statCards.map((card, idx) => (
             <Col xs={12} sm={12} md={6} key={card.key}>
-              <motion.div
+              <TiltCard
+                maxTilt={8}
                 variants={{
                   hidden: { opacity: 0, y: 24, scale: 0.95 },
                   visible: {
@@ -174,7 +205,7 @@ export default function DashboardPage() {
                     </span>
                   </div>
                 </Card>
-              </motion.div>
+              </TiltCard>
             </Col>
           ))}
         </Row>
@@ -252,7 +283,7 @@ export default function DashboardPage() {
           style={{ marginTop: 16, borderRadius: 12 }}
         >
           {hotItems.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#94A3B8', padding: 24 }}>暂无借用记录</div>
+            <div className="empty-water" style={{ textAlign: 'center', color: '#64748B', padding: 32, borderRadius: 8, fontSize: 14 }}>暂无借用记录</div>
           ) : (
             hotItems.map((item, idx) => (
               <motion.div

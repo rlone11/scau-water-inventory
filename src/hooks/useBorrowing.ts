@@ -1,42 +1,52 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { BorrowRecord } from '../types';
-import { getRecords, saveRecords, generateId, nowISO, getItems, saveItems } from '../utils/storage';
+import { generateId, nowISO } from '../utils/storage';
+import { fetchRecords, createRecord, updateRecord } from '../services/recordService';
+import { fetchItemById, fetchItems, updateItem } from '../services/itemService';
 
 export function useBorrowing() {
   const [records, setRecords] = useState<BorrowRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Load from Supabase
   useEffect(() => {
-    refreshRecords();
-    setLoading(false);
+    let cancelled = false;
+    fetchRecords()
+      .then((data) => {
+        if (!cancelled) {
+          setRecords(data);
+          setLoading(false);
+          // Mark overdue in memory
+          refreshOverdue(data);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load records:', err);
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
   }, []);
 
-  const refreshRecords = useCallback(() => {
-    // Check for overdue items
-    const raw = getRecords();
+  const refreshOverdue = useCallback(async (existing?: BorrowRecord[]) => {
+    const list = existing ?? (await fetchRecords());
     const now = new Date();
     let changed = false;
-    const updated = raw.map((r) => {
-      if (
-        r.status === 'borrowed' &&
-        new Date(r.expectedReturnDate) < now
-      ) {
+    const updated = list.map((r) => {
+      if (r.status === 'borrowed' && new Date(r.expectedReturnDate) < now) {
         changed = true;
+        // Persist overdue status to Supabase
+        updateRecord(r.id, { status: 'overdue' }).catch(console.error);
         return { ...r, status: 'overdue' as const };
       }
       return r;
     });
-    if (changed) saveRecords(updated);
     setRecords(updated);
-  }, []);
-
-  const persist = useCallback((newRecords: BorrowRecord[]) => {
-    setRecords(newRecords);
-    saveRecords(newRecords);
+    // Swallow error silently — just reflect in UI
+    void changed;
   }, []);
 
   const borrowItem = useCallback(
-    (data: {
+    async (data: {
       itemId: string;
       itemName: string;
       borrowerName: string;
@@ -48,8 +58,8 @@ export function useBorrowing() {
       borrowDate: string;
       expectedReturnDate: string;
     }) => {
-      const items = getItems();
-      const item = items.find((i) => i.id === data.itemId);
+      // Check stock from Supabase
+      const item = await fetchItemById(data.itemId);
       if (!item || item.availableQty < data.quantity) {
         return false;
       }
@@ -59,68 +69,61 @@ export function useBorrowing() {
         ...data,
         status: 'borrowed',
       };
-      persist([...getRecords(), record]);
 
-      // Update item available quantity
-      const updatedItems = items.map((i) =>
-        i.id === data.itemId
-          ? { ...i, availableQty: i.availableQty - data.quantity, updatedAt: nowISO() }
-          : i,
-      );
-      saveItems(updatedItems);
+      // Create record + decrement stock
+      await createRecord(record);
+      await updateItem(data.itemId, {
+        availableQty: item.availableQty - data.quantity,
+      });
+
+      // Refresh local state
+      const freshRecords = await fetchRecords();
+      setRecords(freshRecords);
 
       return true;
     },
-    [persist],
+    [],
   );
 
   const returnItem = useCallback(
-    (recordId: string, damagedQty?: number, damagedNote?: string) => {
-      const allRecords = getRecords();
+    async (recordId: string, damagedQty?: number, damagedNote?: string) => {
+      const allRecords = await fetchRecords();
       const record = allRecords.find((r) => r.id === recordId);
       if (!record || record.status === 'returned') return false;
 
       const now = nowISO();
       const safeDamagedQty = Math.min(damagedQty || 0, record.quantity);
 
-      const updated = allRecords.map((r) =>
-        r.id === recordId
-          ? {
-              ...r,
-              status: 'returned' as const,
-              actualReturnDate: now,
-              damagedQty: safeDamagedQty > 0 ? safeDamagedQty : undefined,
-              damagedNote: damagedNote || undefined,
-            }
-          : r,
-      );
-      persist(updated);
+      // Update record
+      await updateRecord(recordId, {
+        status: 'returned',
+        actualReturnDate: now,
+        damagedQty: safeDamagedQty > 0 ? safeDamagedQty : undefined,
+        damagedNote: damagedNote || undefined,
+      });
 
       // Update item quantities
-      const items = getItems();
-      const restoredQty = record.quantity - safeDamagedQty;
-      saveItems(
-        items.map((i) =>
-          i.id === record.itemId
-            ? {
-                ...i,
-                availableQty: i.availableQty + restoredQty,
-                quantity: i.quantity - safeDamagedQty,
-                updatedAt: now,
-              }
-            : i,
-        ),
-      );
+      const item = await fetchItemById(record.itemId);
+      if (item) {
+        const restoredQty = record.quantity - safeDamagedQty;
+        await updateItem(record.itemId, {
+          availableQty: item.availableQty + restoredQty,
+          quantity: item.quantity - safeDamagedQty,
+        });
+      }
+
+      // Refresh local state
+      const freshRecords = await fetchRecords();
+      setRecords(freshRecords);
 
       return true;
     },
-    [persist],
+    [],
   );
 
   const searchRecords = useCallback(
     (query: string, statusFilter?: string) => {
       let filtered = [...records];
-
       if (query) {
         const q = query.toLowerCase();
         filtered = filtered.filter(
@@ -130,11 +133,9 @@ export function useBorrowing() {
             r.borrowerId.toLowerCase().includes(q),
         );
       }
-
       if (statusFilter && statusFilter !== 'all') {
         filtered = filtered.filter((r) => r.status === statusFilter);
       }
-
       return filtered;
     },
     [records],
@@ -146,6 +147,6 @@ export function useBorrowing() {
     borrowItem,
     returnItem,
     searchRecords,
-    refreshRecords,
+    refreshRecords: () => refreshOverdue(),
   };
 }

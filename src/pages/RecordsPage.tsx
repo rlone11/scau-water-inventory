@@ -43,9 +43,9 @@ export default function RecordsPage() {
     setReturnModalOpen(true);
   };
 
-  const handleReturn = () => {
+  const handleReturn = async () => {
     if (!returnRecord) return;
-    const success = returnItem(
+    const success = await returnItem(
       returnRecord.id,
       hasDamage ? (damagedQty || 0) : 0,
       hasDamage ? damagedNote : undefined,
@@ -146,9 +146,11 @@ export default function RecordsPage() {
 
       {/* Table */}
       {filtered.length === 0 ? (
-        <Empty description="暂无借记记录" style={{ marginTop: 60 }}>
-          <Button type="primary" onClick={() => navigate('/items')}>去借物品</Button>
-        </Empty>
+        <div className="empty-water" style={{ borderRadius: 12, padding: 40, marginTop: 60, background: '#fff' }}>
+          <Empty description="暂无借记记录">
+            <Button type="primary" onClick={() => navigate('/items')}>去借物品</Button>
+          </Empty>
+        </div>
       ) : (
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
           <Card style={{ borderRadius: 12 }}>

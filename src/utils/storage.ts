@@ -1,42 +1,7 @@
 const KEYS = {
-  ITEMS: 'scau_items',
-  RECORDS: 'scau_records',
   ADMIN_PWD: 'scau_admin_pwd',
   CURRENT_ROLE: 'scau_current_role',
 } as const;
-
-function get<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function set<T>(key: string, value: T): void {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
-// Items
-import type { Item, BorrowRecord } from '../types';
-
-export function getItems(): Item[] {
-  return get<Item[]>(KEYS.ITEMS, []);
-}
-
-export function saveItems(items: Item[]): void {
-  set(KEYS.ITEMS, items);
-}
-
-// Records
-export function getRecords(): BorrowRecord[] {
-  return get<BorrowRecord[]>(KEYS.RECORDS, []);
-}
-
-export function saveRecords(records: BorrowRecord[]): void {
-  set(KEYS.RECORDS, records);
-}
 
 // Admin password - stored as plain text (simple approach for local use)
 export function getAdminPassword(): string | null {

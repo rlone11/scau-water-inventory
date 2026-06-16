@@ -10,8 +10,9 @@ import {
   UserOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
+import WaterBackground from './WaterBackground';
+import BackToTop from './BackToTop';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -152,6 +153,9 @@ export default function MainLayout() {
         {sidebarContent}
       </Drawer>
 
+      {/* Water particle background */}
+      <WaterBackground density="max" baseOpacity={0.08} />
+
       {/* Main content area */}
       <AntLayout style={{ marginLeft: collapsed ? 64 : 220, transition: 'margin-left 0.2s' }}>
         {/* Header */}
@@ -226,17 +230,7 @@ export default function MainLayout() {
 
         {/* Page content */}
         <Content style={{ padding: '16px 24px', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={location.pathname}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <Outlet />
-            </motion.div>
-          </AnimatePresence>
+          <Outlet />
         </Content>
 
         {/* Footer */}
@@ -260,6 +254,8 @@ export default function MainLayout() {
           <span>· 四川农业大学水利水电学院 · {'© '} {new Date().getFullYear()}</span>
         </div>
       </AntLayout>
+
+      <BackToTop />
 
       {/* Mobile responsive styles */}
       <style>{`

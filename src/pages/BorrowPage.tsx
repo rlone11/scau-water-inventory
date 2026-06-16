@@ -9,7 +9,7 @@ import dayjs from 'dayjs';
 import { useItems } from '../hooks/useItems';
 import { useBorrowing } from '../hooks/useBorrowing';
 import { CATEGORY_LABELS, CATEGORY_COLORS } from '../types';
-import Celebration from '../components/Celebration';
+import ParticleCelebration from '../components/ParticleCelebration';
 
 const { Title, Text } = Typography;
 
@@ -41,8 +41,8 @@ export default function BorrowPage() {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      const success = borrowItem({
+    setTimeout(async () => {
+      const success = await borrowItem({
         itemId: item.id,
         itemName: item.name,
         borrowerName: values.borrowerName as string,
@@ -67,7 +67,7 @@ export default function BorrowPage() {
 
   return (
     <div style={{ maxWidth: 600, margin: '0 auto', paddingBottom: 32 }}>
-      <Celebration show={showCelebration} onComplete={() => navigate('/records')} />
+      <ParticleCelebration show={showCelebration} onComplete={() => navigate('/records')} />
       <Button type="link" icon={<ArrowLeftOutlined />} onClick={() => navigate('/items')} style={{ marginBottom: 16, padding: 0 }}>
         返回物品列表
       </Button>

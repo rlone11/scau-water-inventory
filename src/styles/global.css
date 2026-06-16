@@ -200,23 +200,57 @@ body {
   transform: scale(0.95);
 }
 
-/* ===== scrollbar ===== */
+/* ===== Water droplet scrollbar ===== */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: linear-gradient(180deg, rgba(14, 165, 233, 0.04), rgba(14, 165, 233, 0.08), rgba(14, 165, 233, 0.04));
+  border-radius: 8px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(14, 165, 233, 0.3);
-  border-radius: 3px;
+  background: linear-gradient(180deg, #7DD3FC, #0EA5E9, #0284C7);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 1px 4px rgba(14, 165, 233, 0.2);
+  transition: all 0.3s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(14, 165, 233, 0.5);
+  background: linear-gradient(180deg, #BAE6FD, #38BDF8, #0EA5E9);
+  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.35);
+}
+
+/* ===== Water-reflection empty state ===== */
+@keyframes water-reflect {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.empty-water {
+  position: relative;
+  overflow: hidden;
+}
+
+.empty-water::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(14, 165, 233, 0.06) 45%,
+    rgba(125, 211, 252, 0.1) 50%,
+    rgba(14, 165, 233, 0.06) 55%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  animation: water-reflect 3s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
 }
 
 /* ===== Item card for mobile ===== */
@@ -230,16 +264,23 @@ body {
   transform: scale(0.98);
 }
 
-/* ===== Skeleton loading ===== */
+/* ===== Skeleton loading (water shimmer) ===== */
 @keyframes shimmer {
   0% { background-position: -200px 0; }
   100% { background-position: calc(200px + 100%) 0; }
 }
 
 .skeleton {
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background: linear-gradient(
+    90deg,
+    rgba(14, 165, 233, 0.04) 25%,
+    rgba(14, 165, 233, 0.15) 37%,
+    rgba(14, 165, 233, 0.08) 50%,
+    rgba(14, 165, 233, 0.15) 63%,
+    rgba(14, 165, 233, 0.04) 75%
+  );
   background-size: 200px 100%;
-  animation: shimmer 1.5s infinite;
+  animation: shimmer 1.8s ease-in-out infinite;
   border-radius: 8px;
 }
 
@@ -324,4 +365,76 @@ body {
 .photo-upload:hover {
   border-color: #0EA5E9;
   background: rgba(14, 165, 233, 0.03);
+}
+
+/* ===== E3: Table row water glow on hover ===== */
+.ant-table-row {
+  transition: box-shadow 0.25s ease, background 0.25s ease;
+}
+
+.ant-table-row:hover {
+  box-shadow: 0 0 18px rgba(14, 165, 233, 0.1), inset 4px 0 0 rgba(14, 165, 233, 0.3);
+}
+
+/* ===== E4: Input focus bottom-border wave sweep ===== */
+.ant-input-affix-wrapper {
+  position: relative;
+  overflow: hidden;
+}
+
+.ant-input-affix-wrapper::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #7DD3FC, #0EA5E9, #0284C7);
+  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  border-radius: 0 0 8px 8px;
+  z-index: 1;
+}
+
+.ant-input-affix-wrapper-focused::after {
+  width: 100%;
+}
+
+.ant-input:focus {
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.12) !important;
+  border-color: #0EA5E9 !important;
+}
+
+/* ===== Performance hints ===== */
+
+/* GPU-composite animated elements */
+.stat-card,
+.ant-card-hoverable,
+.ant-table-row,
+.magnetic-btn,
+.tilt-card,
+.ant-btn:not(.ant-btn-link) {
+  will-change: transform;
+}
+
+/* Off-screen list rows — skip paint until visible */
+.ant-table-tbody > tr {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 54px;
+}
+
+/* Disable will-change on inactive (save GPU mem) */
+.stat-card:active,
+.ant-btn:active {
+  will-change: auto;
+}
+
+/* Reduce paint area for fixed backgrounds */
+.water-pattern::before,
+.sidebar-water::after {
+  contain: layout style paint;
+}
+
+/* Smooth scrolling for back-to-top */
+html {
+  scroll-behavior: smooth;
 }

@@ -9,7 +9,7 @@ import {
   SwapOutlined, AppstoreOutlined, UnorderedListOutlined,
   EnvironmentOutlined,
 } from '@ant-design/icons';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useItems } from '../hooks/useItems';
 import { useAuth } from '../contexts/AuthContext';
 import { CATEGORY_LABELS, CATEGORY_COLORS, type ItemCategory, type Item } from '../types';
@@ -45,7 +45,25 @@ export default function ItemListPage() {
       width: 70,
       render: (photo: string) =>
         photo ? (
-          <img src={photo} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover' }} />
+          <motion.div
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 250, damping: 18 }}
+            style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden' }}
+          >
+            {/* Water drop overlay that fades away */}
+            <motion.div
+              initial={{ opacity: 1 }}
+              animate={{ opacity: 0 }}
+              transition={{ delay: 0.3, duration: 0.3 }}
+              style={{
+                position: 'absolute', inset: 0, zIndex: 1,
+                background: 'radial-gradient(circle at center, #0EA5E9 0%, transparent 70%)',
+                borderRadius: 8, pointerEvents: 'none',
+              }}
+            />
+            <img src={photo} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover' }} />
+          </motion.div>
         ) : (
           <div style={{ width: 44, height: 44, borderRadius: 8, background: '#E0F2FE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0EA5E9', fontSize: 20 }}>📦</div>
         ),
@@ -145,7 +163,7 @@ export default function ItemListPage() {
 
       {/* Results */}
       {filteredItems.length === 0 ? (
-        <Empty description="没有找到物品" style={{ marginTop: 60 }} />
+        <Empty className="empty-water" description="没有找到物品" style={{ marginTop: 60, borderRadius: 12 }} />
       ) : viewMode === 'card' ? (
         <motion.div initial="hidden" animate="visible" variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.06 } } }}>
           <Row gutter={[12, 12]}>
@@ -157,9 +175,24 @@ export default function ItemListPage() {
                     className="item-mobile-card"
                     cover={
                       item.photo ? (
-                        <div style={{ height: 130, overflow: 'hidden' }}>
+                        <motion.div
+                          initial={{ scale: 0.8, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          transition={{ type: 'spring', stiffness: 200, damping: 16 }}
+                          style={{ height: 130, overflow: 'hidden', position: 'relative' }}
+                        >
+                          <motion.div
+                            initial={{ opacity: 1 }}
+                            animate={{ opacity: 0 }}
+                            transition={{ delay: 0.35, duration: 0.25 }}
+                            style={{
+                              position: 'absolute', inset: 0, zIndex: 1,
+                              background: 'radial-gradient(circle at center, #0EA5E9 0%, transparent 65%)',
+                              pointerEvents: 'none',
+                            }}
+                          />
                           <img src={item.photo} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        </div>
+                        </motion.div>
                       ) : (
                         <div style={{ height: 130, background: 'linear-gradient(135deg, #E0F2FE, #BAE6FD)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40 }}>
                           📦
