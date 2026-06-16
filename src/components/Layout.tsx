@@ -17,7 +17,7 @@ import BackToTop from './BackToTop';
 const { Header, Sider, Content } = AntLayout;
 
 const menuItems = [
-  { key: '/', icon: <DashboardOutlined />, label: '统计仪表盘' },
+  { key: '/', icon: <DashboardOutlined />, label: '物品数据' },
   { key: '/items', icon: <AppstoreOutlined />, label: '物品管理' },
   { key: '/records', icon: <FileTextOutlined />, label: '借记记录' },
 ];

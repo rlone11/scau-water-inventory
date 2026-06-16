@@ -40,35 +40,51 @@ export default function ItemFormPage() {
       message.error('请选择图片文件');
       return false;
     }
-    if (file.size > 1024 * 1024) {
-      message.error('图片大小不能超过 1MB');
+    // Accept up to 10MB
+    if (file.size > 10 * 1024 * 1024) {
+      message.error('图片大小不能超过 10MB');
       return false;
     }
 
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result as string;
-      // Compress if large
-      if (result.length > 200 * 1024) {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const scale = Math.min(1, Math.sqrt(200 * 1024 / result.length));
-          canvas.width = img.width * scale;
-          canvas.height = img.height * scale;
-          const ctx = canvas.getContext('2d')!;
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const compressed = canvas.toDataURL('image/jpeg', 0.7);
-          setPhotoBase64(compressed);
-          message.success('图片已压缩上传');
-        };
-        img.src = result;
-      } else {
-        setPhotoBase64(result);
-      }
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 800;
+        const TARGET_KB = 250;
+
+        let { width, height } = img;
+        // Scale down if too large
+        if (width > MAX_DIM || height > MAX_DIM) {
+          const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Progressive compression: start at 0.7, drop until under target
+        let quality = 0.7;
+        let compressed = canvas.toDataURL('image/jpeg', quality);
+
+        while (compressed.length > TARGET_KB * 1024 && quality > 0.2) {
+          quality -= 0.1;
+          compressed = canvas.toDataURL('image/jpeg', quality);
+        }
+
+        setPhotoBase64(compressed);
+        const finalKB = Math.round(compressed.length / 1024);
+        message.success(`图片已压缩至 ${finalKB}KB`);
+      };
+      img.src = result;
     };
     reader.readAsDataURL(file);
-    return false; // Prevent default upload
+    return false;
   };
 
   const handleSubmit = (values: Record<string, unknown>) => {

@@ -23,7 +23,7 @@ const { Title } = Typography;
 const BASE = import.meta.env.BASE_URL;
 
 const statCards = [
-  { key: 'total', label: '物品总数', icon: <DropboxOutlined />, color: '#0EA5E9' },
+  { key: 'total', label: '物品总类', icon: <DropboxOutlined />, color: '#0EA5E9' },
   { key: 'available', label: '在库可用', icon: <CheckCircleOutlined />, color: '#10B981' },
   { key: 'borrowed', label: '已借出', icon: <SwapOutlined />, color: '#F59E0B' },
   { key: 'overdue', label: '逾期未还', icon: <ExclamationCircleOutlined />, color: '#EF4444' },
