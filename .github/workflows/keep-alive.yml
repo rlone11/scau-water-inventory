@@ -12,8 +12,14 @@ jobs:
     steps:
       - name: Ping Supabase
         run: |
-          curl -s -o /dev/null -w "Status: %{http_code}" \
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://rdmrplrlyojwugcxbqmj.supabase.co/rest/v1/items?limit=1" \
             -H "apikey: ${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.VITE_SUPABASE_ANON_KEY }}"
-          echo " — Supabase is alive ✅"
+            -H "Authorization: Bearer ${{ secrets.VITE_SUPABASE_ANON_KEY }}")
+          echo "HTTP Status: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "Supabase is alive ✅"
+          else
+            echo "Supabase ping FAILED with status $STATUS ❌"
+            exit 1
+          fi
