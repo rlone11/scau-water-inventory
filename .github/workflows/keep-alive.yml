@@ -5,6 +5,9 @@ on:
     # 每天 UTC 12:00 运行（北京时间 20:00）
     - cron: '0 12 * * *'
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/keep-alive.yml'
 
 jobs:
   ping:
@@ -14,8 +17,8 @@ jobs:
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://rdmrplrlyojwugcxbqmj.supabase.co/rest/v1/items?limit=1" \
-            -H "apikey: ${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.VITE_SUPABASE_ANON_KEY }}")
+            -H "apikey: sb_publishable_LMYWpxNTqc4klCZ_BSfaww_9FeAZBG9" \
+            -H "Authorization: Bearer sb_publishable_LMYWpxNTqc4klCZ_BSfaww_9FeAZBG9")
           echo "HTTP Status: $STATUS"
           if [ "$STATUS" = "200" ]; then
             echo "Supabase is alive ✅"
