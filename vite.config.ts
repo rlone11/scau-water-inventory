@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: process.env.VERCEL ? '/' : '/scau-water-inventory/',
+  base: process.env.VITE_DEPLOY_TARGET ? '/' : '/scau-water-inventory/',
   server: {
     port: 3000,
     open: true,

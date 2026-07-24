@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "VITE_DEPLOY_TARGET=vercel npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
   "routes": [
