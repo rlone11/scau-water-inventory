@@ -1,6 +1,16 @@
 import { supabase } from '../lib/supabase';
 import type { Item, ItemCategory } from '../types';
 import { cacheGet, cacheSet, cacheInvalidate, CACHE_KEYS } from '../lib/cache';
+import { nextCode } from '../lib/itemCode';
+
+/** Postgres 唯一约束冲突错误码 */
+const UNIQUE_VIOLATION = '23505';
+
+/** 编号冲突时展示给用户的文案 */
+export const CODE_CONFLICT_MESSAGE = '该编号已存在，请更换';
+
+/** 自动编号因并发冲突时的最大重试次数 */
+const MAX_AUTO_CODE_ATTEMPTS = 3;
 
 // 列表快速查询：排除 photo（base64大字段）和 notes，保证首屏秒开
 const LIST_COLUMNS = 'id, name, code, category, quantity, available_qty, location, created_at, updated_at';
@@ -116,21 +126,53 @@ export async function fetchItemById(id: string): Promise<Item | null> {
   return item;
 }
 
+/**
+ * 查询当前最大编号并返回下一个可用编号。
+ *
+ * 刻意不使用 TTL 缓存：若读取缓存数据，刚删除物品后会算出已被占用的编号。
+ */
+export async function fetchNextCode(): Promise<string> {
+  const { data, error } = await supabase.from('items').select('code');
+  if (error) throw error;
+  return nextCode((data ?? []).map((r) => r.code as string));
+}
+
 // ===== 变更（自动失效缓存） =====
 
+/**
+ * 新建物品。
+ *
+ * options.autoCode 为 true 时（编号由系统自动填入），若因并发导致编号冲突，
+ * 会自动重新取号并重试，用户无感。
+ *
+ * options.autoCode 为 false 时（用户手动指定编号），冲突直接抛出
+ * CODE_CONFLICT_MESSAGE —— 绝不静默改号，否则用户输入 005 却存成 007。
+ */
 export async function createItem(
   input: Omit<Item, 'id' | 'createdAt' | 'updatedAt'> & { id: string; createdAt: string; updatedAt: string },
+  options?: { autoCode?: boolean },
 ): Promise<Item> {
-  const row = itemToRow(input);
-  const { data, error } = await supabase
-    .from('items')
-    .insert(row)
-    .select()
-    .single();
+  const maxAttempts = options?.autoCode ? MAX_AUTO_CODE_ATTEMPTS : 1;
+  let lastError: Error = new Error(CODE_CONFLICT_MESSAGE);
 
-  if (error) throw error;
-  invalidateItemsCache();
-  return rowToItem(data as Record<string, unknown>);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const code = attempt === 0 ? input.code : await fetchNextCode();
+    const row = itemToRow({ ...input, code });
+    const { data, error } = await supabase
+      .from('items')
+      .insert(row)
+      .select()
+      .single();
+
+    if (!error) {
+      invalidateItemsCache();
+      return rowToItem(data as Record<string, unknown>);
+    }
+    if (error.code !== UNIQUE_VIOLATION) throw error;
+    lastError = new Error(CODE_CONFLICT_MESSAGE);
+  }
+
+  throw lastError;
 }
 
 export async function updateItem(id: string, updates: Partial<Item>): Promise<void> {

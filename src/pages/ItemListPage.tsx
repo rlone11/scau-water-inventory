@@ -2,12 +2,12 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Input, Select, Row, Col, Tag, Button, Empty, Table, Space,
-  Popconfirm, message, Typography, Badge, Spin, Result,
+  Popconfirm, message, Typography, Badge, Spin, Result, Image,
 } from 'antd';
 import {
   SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
   SwapOutlined, AppstoreOutlined, UnorderedListOutlined,
-  EnvironmentOutlined, DownloadOutlined,
+  EnvironmentOutlined, DownloadOutlined, EyeOutlined,
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { useItems } from '../hooks/useItems';
@@ -60,6 +60,7 @@ export default function ItemListPage() {
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: 'spring', stiffness: 250, damping: 18 }}
             style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
           >
             {/* Water drop overlay that fades away */}
             <motion.div
@@ -72,7 +73,14 @@ export default function ItemListPage() {
                 borderRadius: 8, pointerEvents: 'none',
               }}
             />
-            <img src={photo} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover' }} />
+            <Image
+              src={photo}
+              alt=""
+              width={44}
+              height={44}
+              style={{ borderRadius: 8, objectFit: 'cover', display: 'block' }}
+              preview={{ mask: <EyeOutlined /> }}
+            />
           </motion.div>
         ) : (
           <div style={{ width: 44, height: 44, borderRadius: 8, background: '#E0F2FE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0EA5E9', fontSize: 20 }}>📦</div>
@@ -217,6 +225,7 @@ export default function ItemListPage() {
                               animate={{ scale: 1, opacity: 1 }}
                               transition={{ type: 'spring', stiffness: 200, damping: 16 }}
                               style={{ height: 130, overflow: 'hidden', position: 'relative' }}
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <motion.div
                                 initial={{ opacity: 1 }}
@@ -228,7 +237,14 @@ export default function ItemListPage() {
                                   pointerEvents: 'none',
                                 }}
                               />
-                              <img src={item.photo} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <Image
+                                src={item.photo}
+                                alt={item.name}
+                                width="100%"
+                                height={130}
+                                style={{ objectFit: 'cover', display: 'block' }}
+                                preview={{ mask: <EyeOutlined /> }}
+                              />
                             </motion.div>
                           ) : (
                             <div style={{ height: 130, background: 'linear-gradient(135deg, #E0F2FE, #BAE6FD)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40 }}>

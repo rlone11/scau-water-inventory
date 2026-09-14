@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Card, Form, Input, InputNumber, Select, Button, message, Typography, Space,
+  Card, Form, Input, InputNumber, Select, Button, message, Typography, Space, Tag,
 } from 'antd';
+import type { InputRef } from 'antd';
 import { UploadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { useItems } from '../hooks/useItems';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchItemById } from '../services/itemService';
+import { fetchItemById, fetchNextCode } from '../services/itemService';
+import { QUICK_LOCATIONS, getRecentLocations, rememberLocation } from '../lib/locations';
 import { CATEGORY_LABELS, type ItemCategory } from '../types';
 
 const { Title } = Typography;
@@ -22,6 +24,10 @@ export default function ItemFormPage() {
   const [form] = Form.useForm();
   const [photoBase64, setPhotoBase64] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  // 标记编号是否被用户手动编辑过 —— 决定冲突时是重试还是报错
+  const codeEditedRef = useRef(false);
+  const locationInputRef = useRef<InputRef>(null);
+  const [recentLocations, setRecentLocations] = useState<string[]>(() => getRecentLocations());
 
   // 编辑模式：用 fetchItemById 获取完整数据（含 photo 和 notes）
   useEffect(() => {
@@ -51,6 +57,24 @@ export default function ItemFormPage() {
       });
     return () => { cancelled = true; };
   }, [id, isEdit, form, navigate, items]);
+
+  // 新建模式：异步预填下一个编号
+  useEffect(() => {
+    if (isEdit) return;
+
+    let cancelled = false;
+    fetchNextCode()
+      .then((code) => {
+        // 竞态保护：用户可能已在编号框输入内容，此时不得覆盖
+        if (cancelled || codeEditedRef.current) return;
+        form.setFieldValue('code', code);
+      })
+      .catch(() => {
+        if (!cancelled) message.warning('自动编号获取失败，请手动填写');
+      });
+
+    return () => { cancelled = true; };
+  }, [isEdit, form]);
 
   const handleImageUpload = (file: File): boolean => {
     if (!file.type.startsWith('image/')) {
@@ -104,9 +128,19 @@ export default function ItemFormPage() {
     return false;
   };
 
-  const handleSubmit = (values: Record<string, unknown>) => {
+  /** 填入存放位置，并把光标定位到末尾，方便继续输入柜位后缀 */
+  const fillLocation = (value: string) => {
+    form.setFieldValue('location', value);
+    const input = locationInputRef.current?.input;
+    if (input) {
+      input.focus();
+      input.setSelectionRange(value.length, value.length);
+    }
+  };
+
+  const handleSubmit = async (values: Record<string, unknown>) => {
     setLoading(true);
-    setTimeout(() => {
+    try {
       const existingItem = isEdit ? items.find((i) => i.id === id) : null;
 
       const data = {
@@ -124,21 +158,30 @@ export default function ItemFormPage() {
       };
 
       if (isEdit && id) {
-        // Don't modify availableQty on edit for simplicity
         const existing = items.find((i) => i.id === id);
         const diff = (values.quantity as number) - (existing?.quantity || 0);
-        updateItem(id, {
+        await updateItem(id, {
           ...data,
           availableQty: (existing?.availableQty || 0) + diff,
         });
         message.success('物品信息已更新');
       } else {
-        addItem(data);
+        // autoCode 为 true 时冲突会自动重试；为 false 时冲突直接报错
+        await addItem(data, { autoCode: !codeEditedRef.current });
         message.success('物品已添加');
       }
-      setLoading(false);
+
+      if (data.location) {
+        rememberLocation(data.location);
+        setRecentLocations(getRecentLocations());
+      }
+
       navigate('/items');
-    }, 300);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '保存失败，请重试');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!isAdmin) {
@@ -166,7 +209,6 @@ export default function ItemFormPage() {
             initialValues={{
               quantity: 1,
               category: 'fixed_assets' as ItemCategory,
-              code: `WP${Date.now().toString(36).toUpperCase().slice(-6)}`,
             }}
           >
             <Form.Item name="name" label="物品名称" rules={[{ required: true, message: '请输入物品名称' }]}>
@@ -174,7 +216,10 @@ export default function ItemFormPage() {
             </Form.Item>
 
             <Form.Item name="code" label="物品编号" rules={[{ required: true, message: '请输入物品编号' }]}>
-              <Input placeholder="如：WP20240101" />
+              <Input
+                placeholder="自动生成，可手动修改"
+                onChange={() => { codeEditedRef.current = true; }}
+              />
             </Form.Item>
 
             <Form.Item name="category" label="物品分类" rules={[{ required: true }]}>
@@ -185,9 +230,40 @@ export default function ItemFormPage() {
               <InputNumber min={1} style={{ width: '100%' }} />
             </Form.Item>
 
-            <Form.Item name="location" label="存放位置" rules={[{ required: true, message: '请输入存放位置' }]}>
-              <Input placeholder="如：综合楼302办公室 柜子A" />
+            <Form.Item
+              name="location"
+              label="存放位置"
+              rules={[{ required: true, message: '请输入存放位置' }]}
+              style={{ marginBottom: 8 }}
+            >
+              <Input ref={locationInputRef} placeholder="如：综合楼302办公室 柜子A" />
             </Form.Item>
+
+            <div style={{ marginBottom: 24 }}>
+              <Space size={4} wrap>
+                {QUICK_LOCATIONS.map((loc) => (
+                  <Tag
+                    key={loc}
+                    color="blue"
+                    style={{ cursor: 'pointer', marginInlineEnd: 0 }}
+                    onClick={() => fillLocation(loc)}
+                  >
+                    {loc}
+                  </Tag>
+                ))}
+                {recentLocations
+                  .filter((loc) => !(QUICK_LOCATIONS as readonly string[]).includes(loc))
+                  .map((loc) => (
+                    <Tag
+                      key={loc}
+                      style={{ cursor: 'pointer', marginInlineEnd: 0 }}
+                      onClick={() => fillLocation(loc)}
+                    >
+                      {loc}
+                    </Tag>
+                  ))}
+              </Space>
+            </div>
 
             <Form.Item label="物品照片">
               <div style={{ display: 'flex', gap: 12, alignItems: 'start' }}>

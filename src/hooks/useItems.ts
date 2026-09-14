@@ -99,7 +99,10 @@ export function useItems() {
   // ---- 乐观更新 ----
 
   const addItem = useCallback(
-    async (data: Omit<Item, 'id' | 'createdAt' | 'updatedAt'>) => {
+    async (
+      data: Omit<Item, 'id' | 'createdAt' | 'updatedAt'>,
+      options?: { autoCode?: boolean },
+    ) => {
       const now = nowISO();
       const optimisticItem: Item = {
         ...data,
@@ -111,7 +114,7 @@ export function useItems() {
       setItems((prev) => [optimisticItem, ...prev]);
 
       try {
-        await createItem(optimisticItem);
+        await createItem(optimisticItem, options);
         await refresh();
       } catch (err) {
         setItems((prev) => prev.filter((item) => item.id !== optimisticItem.id));
