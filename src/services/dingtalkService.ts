@@ -95,3 +95,32 @@ export async function linkRecordToItem(
   cacheInvalidate(CACHE_KEYS.ITEMS_LIST);
   cacheInvalidate(CACHE_KEYS.ITEM_BY_ID(itemId));
 }
+
+export interface SyncRunResult {
+  ok: boolean;
+  /** 距离上次同步太近，本次被节流跳过 */
+  throttled?: boolean;
+  inserted?: number;
+  skipped?: number;
+  pending?: number;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * 触发一次钉钉同步。
+ *
+ * 同步必须跑在服务端（Supabase Edge Function）—— 它要用钉钉 AppSecret，
+ * 而网站是公开的静态页面，密钥放进浏览器等于公开泄露。
+ *
+ * 之所以不依赖定时任务：实测本仓库的 GitHub cron 会被延迟 2~5 小时、
+ * 甚至直接被丢弃且没有任何通知。改成「打开页面就同步」之后，
+ * 拿到的一定是最新数据，且页面上不需要任何同步按钮。
+ *
+ * 函数内置 60 秒节流，反复刷新页面不会浪费钉钉接口额度。
+ */
+export async function triggerSync(): Promise<SyncRunResult> {
+  const { data, error } = await supabase.functions.invoke('sync-dingtalk', { method: 'POST' });
+  if (error) throw error;
+  return (data ?? { ok: false }) as SyncRunResult;
+}

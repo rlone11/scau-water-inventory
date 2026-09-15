@@ -9,6 +9,7 @@ import {
   fetchPendingMatches,
   fetchSyncStatus,
   linkRecordToItem,
+  triggerSync,
   type SyncStatus,
 } from '../services/dingtalkService';
 import { suggestByName, confidenceLabel, fuzzyMatches } from '../lib/fuzzyMatch';
@@ -27,12 +28,10 @@ const SECTION = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: EASE_SMOOTH } },
 };
 
-/** 自动同步间隔（分钟）—— 与 sync-dingtalk.yml 的 cron 保持一致 */
-const SYNC_INTERVAL_MIN = 10;
-/** 超过这个时长没同步，就认为可能出问题了 */
-const STALE_THRESHOLD_MIN = SYNC_INTERVAL_MIN * 3;
-/** 页面开着时的静默重拉间隔 —— 比同步间隔短一点，跟得上后台 */
-const PAGE_REFRESH_MS = 5 * 60 * 1000;
+/** 超过这个时长没同步过，就认为可能出问题了 */
+const STALE_THRESHOLD_MIN = 30;
+/** 页面开着时的静默重拉间隔。服务端有 60 秒节流，不会真的这么频繁地打钉钉接口。 */
+const PAGE_REFRESH_MS = 10 * 60 * 1000;
 
 const AMBER = {
   border: '#FEF3C7',
@@ -67,6 +66,11 @@ export default function DingTalkPage() {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
+      // 打开页面先同步一次 —— 页面上没有同步按钮，同步在这里悄悄完成。
+      // 失败不阻塞渲染（函数可能还没部署，或临时网络问题）；
+      // 失败原因会由 Edge Function 写进 dingtalk_sync_status，下面状态卡会显示出来。
+      await triggerSync().catch(() => { /* 见上 */ });
+
       const [list, st] = await Promise.all([fetchPendingMatches(), fetchSyncStatus()]);
       setPending(list);
       setStatus(st);
@@ -178,10 +182,10 @@ export default function DingTalkPage() {
             </Space>
 
             <div style={{ marginTop: 10, fontSize: 12, color: '#94A3B8' }}>
-              每 {SYNC_INTERVAL_MIN} 分钟自动同步，无需手动操作
+              打开本页会自动同步，拿到的一定是最新数据
               {isStale && !failed && (
                 <span style={{ color: '#F59E0B', marginLeft: 8 }}>
-                  · 已超过 {STALE_THRESHOLD_MIN} 分钟未同步，可能有异常
+                  · 已超过 {STALE_THRESHOLD_MIN} 分钟未成功同步，可能有异常
                 </span>
               )}
             </div>
@@ -194,7 +198,8 @@ export default function DingTalkPage() {
                   fontSize: 12, color: '#B91C1C',
                 }}
               >
-                同步任务报错了，数据可能不是最新的。去 GitHub 仓库的 Actions 页看运行日志。
+                同步失败了，数据可能不是最新的。多半是 Edge Function 的密钥没配好 ——
+                去 Supabase 后台的 Edge Functions 看日志。
               </div>
             )}
           </Card>
