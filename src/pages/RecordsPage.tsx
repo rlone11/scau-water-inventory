@@ -80,7 +80,7 @@ export default function RecordsPage() {
       title: '状态', dataIndex: 'status', key: 'status', width: 80,
       render: (status: string, record: BorrowRecord) => (
         <Space size={4}>
-          <Badge status={status === 'returned' ? 'success' : status === 'overdue' ? 'error' : 'processing'}
+          <Badge status={status === 'returned' ? 'success' : status === 'overdue' ? 'error' : status === 'ignored' ? 'default' : 'processing'}
             text={<span style={{ fontSize: 12 }}>{STATUS_LABELS[status as keyof typeof STATUS_LABELS]}</span>}
           />
           {record.damagedQty && record.damagedQty > 0 && (

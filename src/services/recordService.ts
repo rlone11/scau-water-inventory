@@ -18,7 +18,9 @@ export function rowToRecord(row: Record<string, unknown>): BorrowRecord {
     borrowDate: row.borrow_date as string,
     expectedReturnDate: row.expected_return_date as string,
     actualReturnDate: row.actual_return_date as string | undefined,
-    status: row.status as BorrowStatus,
+    // 被忽略的记录统一显示为「已忽略」。忽略是可撤销的，所以不去改数据库的
+    // status 列，只在这里覆盖显示值 —— 恢复时状态会自动变回原样。
+    status: row.ignored_at ? 'ignored' : (row.status as BorrowStatus),
     damagedQty: row.damaged_qty as number | undefined,
     damagedNote: row.damaged_note as string | undefined,
   };

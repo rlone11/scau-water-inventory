@@ -135,7 +135,7 @@ export function useBorrowing() {
     async (recordId: string, damagedQty?: number, damagedNote?: string) => {
       // 先从当前列表找记录
       const record = records.find((r) => r.id === recordId);
-      if (!record || record.status === 'returned') return false;
+      if (!record || record.status === 'returned' || record.status === 'ignored') return false;
 
       const now = nowISO();
       const safeDamagedQty = Math.min(damagedQty || 0, record.quantity);

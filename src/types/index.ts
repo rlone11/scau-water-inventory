@@ -1,5 +1,5 @@
 export type ItemCategory = 'fixed_assets' | 'consumables' | 'activity';
-export type BorrowStatus = 'borrowed' | 'returned' | 'overdue';
+export type BorrowStatus = 'borrowed' | 'returned' | 'overdue' | 'ignored';
 export type UserRole = 'admin' | 'user' | null;
 
 export const CATEGORY_LABELS: Record<ItemCategory, string> = {
@@ -18,12 +18,14 @@ export const STATUS_LABELS: Record<BorrowStatus, string> = {
   borrowed: '借出中',
   returned: '已归还',
   overdue: '已逾期',
+  ignored: '已忽略',
 };
 
 export const STATUS_COLORS: Record<BorrowStatus, string> = {
   borrowed: '#0EA5E9',
   returned: '#10B981',
   overdue: '#EF4444',
+  ignored: '#94A3B8',
 };
 
 export interface Item {
