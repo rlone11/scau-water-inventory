@@ -1,14 +1,21 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Card, Button, Select, Empty, Spin, Typography, Tag, Space, message, Tooltip } from 'antd';
+import {
+  Card, Button, Select, Empty, Spin, Typography, Tag, Space, message,
+  Tooltip, Collapse,
+} from 'antd';
 import {
   SyncOutlined, LinkOutlined, ExclamationCircleOutlined, CheckCircleOutlined,
+  StopOutlined, UndoOutlined,
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import dayjs from 'dayjs';
 import {
   fetchPendingMatches,
+  fetchIgnoredMatches,
   fetchSyncStatus,
   linkRecordToItem,
+  ignoreRecord,
+  restoreRecord,
   triggerSync,
   type SyncStatus,
 } from '../services/dingtalkService';
@@ -55,11 +62,12 @@ export default function DingTalkPage() {
   const { items } = useItems();
 
   const [pending, setPending] = useState<BorrowRecord[]>([]);
+  const [ignored, setIgnored] = useState<BorrowRecord[]>([]);
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [loading, setLoading] = useState(true);
   /** 每条待关联记录当前在下拉框里选了哪个物品 */
   const [picked, setPicked] = useState<Record<string, string>>({});
-  const [linkingId, setLinkingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
 
   /** silent = 后台静默刷新，不显示整页 loading */
@@ -71,8 +79,13 @@ export default function DingTalkPage() {
       // 失败原因会由 Edge Function 写进 dingtalk_sync_status，下面状态卡会显示出来。
       await triggerSync().catch(() => { /* 见上 */ });
 
-      const [list, st] = await Promise.all([fetchPendingMatches(), fetchSyncStatus()]);
+      const [list, ign, st] = await Promise.all([
+        fetchPendingMatches(),
+        fetchIgnoredMatches(),
+        fetchSyncStatus(),
+      ]);
       setPending(list);
+      setIgnored(ign);
       setStatus(st);
     } catch {
       if (!silent) message.error('加载失败，请稍后重试');
@@ -83,7 +96,7 @@ export default function DingTalkPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // 页面开着时定期静默重拉：同步在后台每 10 分钟自动跑，页面自己跟上，无需手动刷新
+  // 页面开着时定期静默重拉，跟上后台数据变化
   useEffect(() => {
     const timer = setInterval(() => load(true), PAGE_REFRESH_MS);
     return () => clearInterval(timer);
@@ -102,9 +115,7 @@ export default function DingTalkPage() {
   /** 每条待关联记录的推荐候选，按钉钉里的名称算出来的 */
   const suggestions = useMemo(() => {
     const map: Record<string, ReturnType<typeof suggestByName<Item>>> = {};
-    for (const rec of pending) {
-      map[rec.id] = suggestByName(rec.itemName, items);
-    }
+    for (const rec of pending) map[rec.id] = suggestByName(rec.itemName, items);
     return map;
   }, [pending, items]);
 
@@ -120,7 +131,7 @@ export default function DingTalkPage() {
     }
 
     const item = items.find((i) => i.id === itemId);
-    setLinkingId(record.id);
+    setBusyId(record.id);
     try {
       await linkRecordToItem(record.id, itemId, record.quantity);
       message.success(`已关联到「${item?.name ?? '物品'}」，可借数量已扣减 ${record.quantity}`);
@@ -129,7 +140,35 @@ export default function DingTalkPage() {
     } catch {
       message.error('关联失败，请重试');
     } finally {
-      setLinkingId(null);
+      setBusyId(null);
+    }
+  };
+
+  const handleIgnore = async (record: BorrowRecord) => {
+    setBusyId(record.id);
+    try {
+      await ignoreRecord(record.id);
+      message.success(`已忽略「${record.itemName}」，可在下方「已忽略」里恢复`);
+      setPending((prev) => prev.filter((r) => r.id !== record.id));
+      setIgnored((prev) => [{ ...record, ignoredAt: new Date().toISOString() }, ...prev]);
+    } catch {
+      message.error('忽略失败，请重试');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleRestore = async (record: BorrowRecord) => {
+    setBusyId(record.id);
+    try {
+      await restoreRecord(record.id);
+      message.success(`「${record.itemName}」已恢复为待关联`);
+      setIgnored((prev) => prev.filter((r) => r.id !== record.id));
+      setPending((prev) => [{ ...record, ignoredAt: undefined }, ...prev]);
+    } catch {
+      message.error('恢复失败，请重试');
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -146,6 +185,99 @@ export default function DingTalkPage() {
   const staleMins = status?.lastSyncAt ? dayjs().diff(dayjs(status.lastSyncAt), 'minute') : null;
   const isStale = staleMins !== null && staleMins > STALE_THRESHOLD_MIN;
 
+  /** 一条待关联记录展开后的内容：候选推荐 + 自己搜 + 操作按钮 */
+  const renderDetail = (rec: BorrowRecord) => {
+    const candidates = suggestions[rec.id] ?? [];
+    const pickedId = picked[rec.id];
+
+    return (
+      <div>
+        <div style={{ fontSize: 12, color: '#94A3B8', marginBottom: 12 }}>
+          {rec.borrowDate ? `借用 ${rec.borrowDate}` : ''}
+          {rec.expectedReturnDate ? ` → 应还 ${rec.expectedReturnDate}` : ''}
+          {rec.phone ? ` · 电话 ${rec.phone}` : ''}
+        </div>
+
+        {rec.purpose && (
+          <div style={{ fontSize: 12, color: AMBER.text, marginBottom: 12 }}>
+            用途：{rec.purpose}
+          </div>
+        )}
+
+        {candidates.length > 0 ? (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: '#64748B', marginBottom: 6 }}>
+              可能的对应物品，点一下选中：
+            </div>
+            <Space wrap size={6}>
+              {candidates.map(({ item, score }) => {
+                const active = pickedId === item.id;
+                const conf = confidenceLabel(score);
+                return (
+                  <Button
+                    key={item.id}
+                    size="small"
+                    type={active ? 'primary' : 'default'}
+                    onClick={() => pickItem(rec.id, item.id)}
+                    style={active
+                      ? { background: 'linear-gradient(135deg, #0EA5E9, #0284C7)', border: 'none' }
+                      : { borderColor: '#FDE68A' }}
+                  >
+                    {item.code} {item.name}
+                    <span style={{ marginLeft: 6, fontSize: 11, opacity: active ? 0.85 : 0.6 }}>
+                      {conf.text}
+                    </span>
+                  </Button>
+                );
+              })}
+            </Space>
+          </div>
+        ) : (
+          <div style={{ marginBottom: 12, fontSize: 12, color: '#94A3B8' }}>
+            库存里没有明显对应的物品，请在下面自己找
+          </div>
+        )}
+
+        <Space wrap>
+          <Select
+            showSearch
+            placeholder="搜索库存物品（错字、少字也能搜到）"
+            style={{ width: 280 }}
+            value={pickedId}
+            onChange={(v) => pickItem(rec.id, v)}
+            options={itemOptions}
+            filterOption={(input, option) => {
+              const opt = option as { name?: string; code?: string } | undefined;
+              const q = (input || '').trim();
+              if (!q) return true;
+              if ((opt?.code ?? '').toLowerCase().includes(q.toLowerCase())) return true;
+              return fuzzyMatches(q, opt?.name ?? '');
+            }}
+          />
+          <Button
+            type="primary"
+            icon={<LinkOutlined />}
+            loading={busyId === rec.id}
+            disabled={!pickedId}
+            onClick={() => handleLink(rec)}
+            style={{ background: 'linear-gradient(135deg, #0EA5E9, #0284C7)', border: 'none' }}
+          >
+            关联
+          </Button>
+          <Tooltip title="不处理这条，从待关联里移走（可随时恢复）">
+            <Button
+              icon={<StopOutlined />}
+              loading={busyId === rec.id}
+              onClick={() => handleIgnore(rec)}
+            >
+              忽略
+            </Button>
+          </Tooltip>
+        </Space>
+      </div>
+    );
+  };
+
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', paddingBottom: 32 }}>
       <Title level={4} style={{ marginTop: 0, color: '#0C4A6E' }}>钉钉审批</Title>
@@ -155,7 +287,7 @@ export default function DingTalkPage() {
         initial="hidden"
         animate="visible"
       >
-        {/* 同步状态 —— 只读，同步由后台自动执行，页面上没有可操作的地方 */}
+        {/* 同步状态 —— 只读，同步由 Edge Function 在打开页面时自动执行 */}
         <motion.div variants={SECTION}>
           <Card style={{ borderRadius: 12, marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
             <Space size={8} wrap>
@@ -208,8 +340,8 @@ export default function DingTalkPage() {
         {/* 待关联 */}
         <motion.div variants={SECTION}>
           <Card
-            style={{ borderRadius: 12 }}
-            styles={{ body: { padding: 16 } }}
+            style={{ borderRadius: 12, marginBottom: ignored.length ? 16 : 0 }}
+            styles={{ body: { padding: pending.length ? '8px 12px' : 16 } }}
             title={
               <Space size={8}>
                 {pending.length > 0 ? (
@@ -230,120 +362,99 @@ export default function DingTalkPage() {
                 description={<Text type="secondary">没有待关联的记录，全部对上了</Text>}
               />
             ) : (
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <div style={{ fontSize: 12, color: '#94A3B8', marginBottom: -4 }}>
-                  这些是钉钉里借了、但库存里对不上号的物品。关联到库存物品后才能归还。
+              <>
+                <div style={{ fontSize: 12, color: '#94A3B8', padding: '0 4px 4px' }}>
+                  钉钉里借了、但库存里对不上号的物品。点条目展开处理，关联后才能归还。
                 </div>
-
-                {pending.map((rec) => {
-                  const candidates = suggestions[rec.id] ?? [];
-                  const pickedId = picked[rec.id];
-
-                  return (
-                    <div
-                      key={rec.id}
-                      style={{
-                        border: `1px solid ${AMBER.border}`,
-                        borderLeft: '3px solid #F59E0B',
-                        background: AMBER.bg,
-                        borderRadius: 10,
-                        padding: 14,
-                      }}
-                    >
-                      {/* 物品名 + 数量（数量刻意放大，避免看错） */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-                        <Text strong style={{ fontSize: 16, color: '#0C4A6E' }}>
-                          {rec.itemName || '（未填写物品名称）'}
-                        </Text>
-                        <span style={{ flexShrink: 0, color: AMBER.text, fontWeight: 700, fontSize: 22, lineHeight: 1 }}>
+                <Collapse
+                  ghost
+                  expandIconPosition="end"
+                  items={pending.map((rec) => ({
+                    key: rec.id,
+                    label: (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                        <span style={{ minWidth: 0 }}>
+                          <Text strong style={{ fontSize: 15, color: '#0C4A6E' }}>
+                            {rec.itemName || '（未填写物品名称）'}
+                          </Text>
+                          <span style={{ marginLeft: 8, fontSize: 12, color: '#94A3B8' }}>
+                            {rec.borrowerName}
+                            {rec.department ? ` · ${rec.department}` : ''}
+                          </span>
+                        </span>
+                        <span style={{ flexShrink: 0, color: AMBER.text, fontWeight: 700, fontSize: 18, lineHeight: 1 }}>
                           {rec.quantity}
-                          <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 2 }}>件</span>
+                          <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 2 }}>件</span>
                         </span>
                       </div>
-
-                      <div style={{ fontSize: 12, color: '#94A3B8', marginTop: 6 }}>
-                        {rec.borrowerName}
-                        {rec.department ? ` · ${rec.department}` : ''}
-                        {rec.borrowDate ? ` · 借用 ${rec.borrowDate}` : ''}
-                        {rec.expectedReturnDate ? ` → 归还 ${rec.expectedReturnDate}` : ''}
-                      </div>
-
-                      {rec.purpose && (
-                        <div style={{ fontSize: 12, color: AMBER.text, marginTop: 4 }}>
-                          用途：{rec.purpose}
-                        </div>
-                      )}
-
-                      {/* 推荐候选 —— 按钉钉里的名称自动算出来的，点一下即选中 */}
-                      {candidates.length > 0 ? (
-                        <div style={{ marginTop: 12 }}>
-                          <div style={{ fontSize: 12, color: '#64748B', marginBottom: 6 }}>
-                            可能的对应物品，点一下选中：
-                          </div>
-                          <Space wrap size={6}>
-                            {candidates.map(({ item, score }) => {
-                              const active = pickedId === item.id;
-                              const conf = confidenceLabel(score);
-                              return (
-                                <Button
-                                  key={item.id}
-                                  size="small"
-                                  type={active ? 'primary' : 'default'}
-                                  onClick={() => pickItem(rec.id, item.id)}
-                                  style={active
-                                    ? { background: 'linear-gradient(135deg, #0EA5E9, #0284C7)', border: 'none' }
-                                    : { borderColor: '#FDE68A' }}
-                                >
-                                  {item.code} {item.name}
-                                  <span style={{ marginLeft: 6, fontSize: 11, opacity: active ? 0.85 : 0.6 }}>
-                                    {conf.text}
-                                  </span>
-                                </Button>
-                              );
-                            })}
-                          </Space>
-                        </div>
-                      ) : (
-                        <div style={{ marginTop: 12, fontSize: 12, color: '#94A3B8' }}>
-                          库存里没有明显对应的物品，请在下面自己找
-                        </div>
-                      )}
-
-                      {/* 兜底：自己搜。输入支持错字、少字、字序不同 */}
-                      <Space style={{ marginTop: 12, width: '100%' }} wrap>
-                        <Select
-                          showSearch
-                          placeholder="搜索库存物品（错字、少字也能搜到）"
-                          style={{ width: 280 }}
-                          value={pickedId}
-                          onChange={(v) => pickItem(rec.id, v)}
-                          options={itemOptions}
-                          filterOption={(input, option) => {
-                            const opt = option as { name?: string; code?: string } | undefined;
-                            const q = (input || '').trim();
-                            if (!q) return true;
-                            if ((opt?.code ?? '').toLowerCase().includes(q.toLowerCase())) return true;
-                            return fuzzyMatches(q, opt?.name ?? '');
-                          }}
-                        />
-                        <Button
-                          type="primary"
-                          icon={<LinkOutlined />}
-                          loading={linkingId === rec.id}
-                          disabled={!pickedId}
-                          onClick={() => handleLink(rec)}
-                          style={{ background: 'linear-gradient(135deg, #0EA5E9, #0284C7)', border: 'none' }}
-                        >
-                          关联
-                        </Button>
-                      </Space>
-                    </div>
-                  );
-                })}
-              </Space>
+                    ),
+                    children: renderDetail(rec),
+                    style: {
+                      border: `1px solid ${AMBER.border}`,
+                      borderLeft: '3px solid #F59E0B',
+                      background: AMBER.bg,
+                      borderRadius: 10,
+                      marginBottom: 8,
+                    },
+                  }))}
+                />
+              </>
             )}
           </Card>
         </motion.div>
+
+        {/* 已忽略 —— 折叠区，平时不占地方 */}
+        {ignored.length > 0 && (
+          <motion.div variants={SECTION}>
+            <Card style={{ borderRadius: 12 }} styles={{ body: { padding: '8px 12px' } }}>
+              <Collapse
+                ghost
+                expandIconPosition="end"
+                items={[{
+                  key: 'ignored',
+                  label: (
+                    <Space size={8}>
+                      <StopOutlined style={{ color: '#94A3B8' }} />
+                      <span style={{ color: '#64748B' }}>已忽略</span>
+                      <Tag style={{ marginInlineEnd: 0 }}>{ignored.length}</Tag>
+                    </Space>
+                  ),
+                  children: (
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      {ignored.map((rec) => (
+                        <div
+                          key={rec.id}
+                          style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            gap: 12, padding: '8px 12px',
+                            background: '#F8FAFC', borderRadius: 8,
+                          }}
+                        >
+                          <span style={{ minWidth: 0 }}>
+                            <Text style={{ color: '#64748B' }}>{rec.itemName}</Text>
+                            <span style={{ marginLeft: 8, fontSize: 12, color: '#94A3B8' }}>
+                              {rec.borrowerName}
+                              {rec.ignoredAt ? ` · 忽略于 ${dayjs(rec.ignoredAt).format('MM-DD HH:mm')}` : ''}
+                            </span>
+                          </span>
+                          <Button
+                            size="small"
+                            type="link"
+                            icon={<UndoOutlined />}
+                            loading={busyId === rec.id}
+                            onClick={() => handleRestore(rec)}
+                          >
+                            恢复
+                          </Button>
+                        </div>
+                      ))}
+                    </Space>
+                  ),
+                }]}
+              />
+            </Card>
+          </motion.div>
+        )}
       </motion.div>
 
       <ParticleCelebration show={showCelebration} onComplete={() => setShowCelebration(false)} />

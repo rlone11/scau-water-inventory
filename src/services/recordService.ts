@@ -7,6 +7,7 @@ export function rowToRecord(row: Record<string, unknown>): BorrowRecord {
     id: row.id as string,
     itemId: (row.item_id as string | null) ?? null,
     dingtalkInstanceId: (row.dingtalk_instance_id as string | null) ?? undefined,
+    ignoredAt: (row.ignored_at as string | null) ?? undefined,
     itemName: row.item_name as string,
     borrowerName: row.borrower_name as string,
     borrowerId: row.borrower_id as string,

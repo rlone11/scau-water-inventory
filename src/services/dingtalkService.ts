@@ -24,6 +24,7 @@ export async function fetchPendingMatches(): Promise<BorrowRecord[]> {
     .select('*')
     .not('dingtalk_instance_id', 'is', null)
     .is('item_id', null)
+    .is('ignored_at', null)
     .order('borrow_date', { ascending: false });
 
   if (error) throw error;
@@ -38,10 +39,51 @@ export async function fetchPendingCount(): Promise<number> {
     .from('borrow_records')
     .select('id', { count: 'exact', head: true })
     .not('dingtalk_instance_id', 'is', null)
-    .is('item_id', null);
+    .is('item_id', null)
+    .is('ignored_at', null);
 
   if (error) throw error;
   return count ?? 0;
+}
+
+/**
+ * 已忽略的钉钉记录。
+ *
+ * 忽略不等于删除 —— 记录仍在库里，只是从待关联列表移走，
+ * 随时可以恢复。这样"这条我不管了"这个决定本身也是有迹可循的。
+ */
+export async function fetchIgnoredMatches(): Promise<BorrowRecord[]> {
+  const { data, error } = await supabase
+    .from('borrow_records')
+    .select('*')
+    .not('dingtalk_instance_id', 'is', null)
+    .not('ignored_at', 'is', null)
+    .order('ignored_at', { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []).map(rowToRecord);
+}
+
+/** 忽略一条待关联记录 —— 记下忽略时间 */
+export async function ignoreRecord(recordId: string): Promise<void> {
+  const { error } = await supabase
+    .from('borrow_records')
+    .update({ ignored_at: new Date().toISOString() })
+    .eq('id', recordId);
+
+  if (error) throw error;
+  cacheInvalidate(CACHE_KEYS.RECORDS_LIST);
+}
+
+/** 撤销忽略，让它回到待关联列表 */
+export async function restoreRecord(recordId: string): Promise<void> {
+  const { error } = await supabase
+    .from('borrow_records')
+    .update({ ignored_at: null })
+    .eq('id', recordId);
+
+  if (error) throw error;
+  cacheInvalidate(CACHE_KEYS.RECORDS_LIST);
 }
 
 /**

@@ -59,6 +59,8 @@ export interface BorrowRecord {
   damagedNote?: string;
   /** 来源钉钉的审批实例 ID；手工录入的记录为空 */
   dingtalkInstanceId?: string;
+  /** 被管理员忽略的时间。有值即表示这条已从「待关联」移走，可撤销 */
+  ignoredAt?: string;
 }
 
 export interface StatData {
