@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Card, Form, Input, InputNumber, Select, Button, message, Typography, Space, Tag,
 } from 'antd';
 import type { InputRef } from 'antd';
-import { UploadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { CameraOutlined, PictureOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { useItems } from '../hooks/useItems';
 import { useAuth } from '../contexts/AuthContext';
@@ -27,6 +27,13 @@ export default function ItemFormPage() {
   // 标记编号是否被用户手动编辑过 —— 决定冲突时是重试还是报错
   const codeEditedRef = useRef(false);
   const locationInputRef = useRef<InputRef>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+
+  // 仅在触屏设备显示"拍照"按钮 —— 桌面浏览器没有摄像头，capture 属性也会被忽略，
+  // 留着一个点了只弹文件对话框的按钮只会让人困惑
+  const isTouchDevice =
+    typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
   const [recentLocations, setRecentLocations] = useState<string[]>(() => getRecentLocations());
 
   // 编辑模式：用 fetchItemById 获取完整数据（含 photo 和 notes）
@@ -76,14 +83,26 @@ export default function ItemFormPage() {
     return () => { cancelled = true; };
   }, [isEdit, form]);
 
+  /**
+   * 拍照与相册两个输入框共用。
+   *
+   * 先取出文件再清空 input.value —— 否则连续选同一张图时 change 事件不会触发，
+   * 表现为"点了按钮没反应"。
+   */
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) handleImageUpload(file);
+  };
+
   const handleImageUpload = (file: File): boolean => {
     if (!file.type.startsWith('image/')) {
       message.error('请选择图片文件');
       return false;
     }
-    // Accept up to 10MB
-    if (file.size > 10 * 1024 * 1024) {
-      message.error('图片大小不能超过 10MB');
+    // 手机直拍的照片体积偏大（高像素机型可到十几 MB），上限放宽到 20MB
+    if (file.size > 20 * 1024 * 1024) {
+      message.error('图片大小不能超过 20MB');
       return false;
     }
 
@@ -275,22 +294,39 @@ export default function ItemFormPage() {
                   />
                 )}
                 <div style={{ flex: 1 }}>
+                  {/* 拍照：capture 让手机直接打开后置摄像头 */}
                   <input
+                    ref={cameraInputRef}
                     type="file"
                     accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleImageUpload(file);
-                    }}
+                    capture="environment"
+                    onChange={handleFileChange}
                     style={{ display: 'none' }}
-                    id="photo-input"
                   />
-                  <Button
-                    icon={<UploadOutlined />}
-                    onClick={() => document.getElementById('photo-input')?.click()}
-                  >
-                    选择照片
-                  </Button>
+                  {/* 相册：不设 capture，手机端弹出"照片图库 / 浏览" */}
+                  <input
+                    ref={galleryInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    style={{ display: 'none' }}
+                  />
+                  <Space wrap>
+                    {isTouchDevice && (
+                      <Button
+                        icon={<CameraOutlined />}
+                        onClick={() => cameraInputRef.current?.click()}
+                      >
+                        拍照
+                      </Button>
+                    )}
+                    <Button
+                      icon={<PictureOutlined />}
+                      onClick={() => galleryInputRef.current?.click()}
+                    >
+                      {isTouchDevice ? '从相册选择' : '选择照片'}
+                    </Button>
+                  </Space>
                   <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 4 }}>支持 JPG/PNG，自动压缩至 200KB 以下</div>
                 </div>
               </div>

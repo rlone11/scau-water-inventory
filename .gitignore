@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# 环境变量文件 —— 凭证一律不提交（线上由 GitHub Secrets 注入）
+# 注意：*.local 只挡带 .local 后缀的，这两条兜住 .env.dingtalk 之类的变体
+.env
+.env.*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

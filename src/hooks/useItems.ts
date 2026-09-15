@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Item, ItemCategory } from '../types';
 import { generateId, nowISO } from '../utils/storage';
-import { fetchItemsLite, fetchItemPhotos, createItem, updateItem, deleteItem } from '../services/itemService';
+import { fetchItemsLite, fetchItemPhoto, createItem, updateItem, deleteItem } from '../services/itemService';
 import { cacheClear } from '../lib/cache';
 import { REFRESH_EVENT } from '../lib/events';
 
@@ -9,6 +9,8 @@ export function useItems() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** 正在请求中的图片 id —— 防止同一张图被重复并发请求 */
+  const inFlightPhotoRef = useRef<Set<string>>(new Set());
 
   // ===== 首次加载：两阶段 =====
   useEffect(() => {
@@ -16,25 +18,13 @@ export function useItems() {
     setLoading(true);
     setError(null);
 
-    // 阶段 1：快速加载列表（不含 photo，秒开）
+    // 列表查询不含 photo 列（base64 大字段），先渲染出结构
+    // 图片改由列表页按视口逐条加载 —— 滚到哪张，哪张先出来
     fetchItemsLite()
       .then((data) => {
         if (cancelled) return;
         setItems(data);
-        setLoading(false); // 列表就绪，UI 立即渲染
-
-        // 阶段 2：后台拉取图片，静默合并
-        fetchItemPhotos()
-          .then((photoMap) => {
-            if (cancelled || photoMap.size === 0) return;
-            setItems((prev) =>
-              prev.map((item) => {
-                const photo = photoMap.get(item.id);
-                return photo ? { ...item, photo } : item;
-              }),
-            );
-          })
-          .catch((err) => console.error('图片加载失败（列表仍可用）:', err));
+        setLoading(false);
       })
       .catch((err) => {
         console.error('Failed to load items:', err);
@@ -56,16 +46,6 @@ export function useItems() {
         .then((data) => {
           setItems(data);
           setLoading(false);
-          return fetchItemPhotos();
-        })
-        .then((photoMap) => {
-          if (!photoMap || photoMap.size === 0) return;
-          setItems((prev) =>
-            prev.map((item) => {
-              const photo = photoMap.get(item.id);
-              return photo ? { ...item, photo } : item;
-            }),
-          );
         })
         .catch((err) => {
           console.error('刷新失败:', err);
@@ -81,18 +61,29 @@ export function useItems() {
     try {
       const data = await fetchItemsLite();
       setItems(data);
-      // 后台拉图片
-      const photoMap = await fetchItemPhotos();
-      if (photoMap.size > 0) {
-        setItems((prev) =>
-          prev.map((item) => {
-            const photo = photoMap.get(item.id);
-            return photo ? { ...item, photo } : item;
-          }),
-        );
-      }
     } catch {
       // 静默失败 — 保留旧数据
+    }
+  }, []);
+
+  /**
+   * 按需加载单条物品的图片 —— 由列表页在卡片进入视口时调用。
+   *
+   * 同一张图不会并发重复请求；服务层有 60 秒缓存，页面来回切换也不会重拉。
+   */
+  const loadPhoto = useCallback(async (id: string) => {
+    if (inFlightPhotoRef.current.has(id)) return;
+    inFlightPhotoRef.current.add(id);
+    try {
+      const photo = await fetchItemPhoto(id);
+      if (!photo) return;
+      setItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, photo } : item)),
+      );
+    } catch {
+      // 单张图片拉取失败不影响列表可用性
+    } finally {
+      inFlightPhotoRef.current.delete(id);
     }
   }, []);
 
@@ -203,8 +194,8 @@ export function useItems() {
     () => ({
       items, loading, error,
       addItem, updateItem: updateOne, deleteItem: removeItem,
-      searchItems, refresh,
+      searchItems, refresh, loadPhoto,
     }),
-    [items, loading, error, addItem, updateOne, removeItem, searchItems, refresh],
+    [items, loading, error, addItem, updateOne, removeItem, searchItems, refresh, loadPhoto],
   );
 }

@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { Item, ItemCategory } from '../types';
-import { cacheGet, cacheSet, cacheInvalidate, CACHE_KEYS } from '../lib/cache';
+import { cacheGet, cacheSet, cacheInvalidate, cacheInvalidatePrefix, CACHE_KEYS } from '../lib/cache';
 import { nextCode } from '../lib/itemCode';
 
 /** Postgres 唯一约束冲突错误码 */
@@ -58,11 +58,12 @@ function itemToRow(item: Partial<Item> & { id: string }): Record<string, unknown
 
 function invalidateItemsCache(): void {
   cacheInvalidate(CACHE_KEYS.ITEMS_LIST);
-  cacheInvalidate(CACHE_KEYS.ITEMS_PHOTOS);
+  cacheInvalidatePrefix('items:photo:');
 }
 
 function invalidateItemCache(id: string): void {
   cacheInvalidate(CACHE_KEYS.ITEM_BY_ID(id));
+  cacheInvalidate(CACHE_KEYS.ITEM_PHOTO(id));
 }
 
 // ===== 查询 =====
@@ -85,24 +86,32 @@ export async function fetchItemsLite(limit = 200): Promise<Item[]> {
   return items;
 }
 
-/** 单独拉取图片映射 { id → photo } — 在列表加载完成后异步调用 */
-export async function fetchItemPhotos(): Promise<Map<string, string>> {
-  const cached = cacheGet<Map<string, string>>(CACHE_KEYS.ITEMS_PHOTOS);
-  if (cached) return cached;
+/**
+ * 按 ID 拉取【单条】物品的图片。
+ *
+ * 刻意只查 id 和 photo 两列：列表页按视口逐条加载图片，
+ * 一次只传一张（约 73KB，约 0.5 秒），滚到哪张哪张先出来。
+ * 相比过去一次性拉取全部（809KB / 4.5 秒）——那期间一张都显示不出来。
+ *
+ * @returns 该物品的图片 base64；无图片返回 null
+ */
+export async function fetchItemPhoto(id: string): Promise<string | null> {
+  const cached = cacheGet<string | null>(CACHE_KEYS.ITEM_PHOTO(id));
+  if (cached !== null) return cached;
 
   const { data, error } = await supabase
     .from('items')
     .select('id, photo')
-    .order('created_at', { ascending: false })
-    .limit(500);
+    .eq('id', id)
+    .single();
 
-  if (error) throw error;
-  const map = new Map<string, string>();
-  for (const row of data ?? []) {
-    if (row.photo) map.set(row.id as string, row.photo as string);
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw error;
   }
-  cacheSet(CACHE_KEYS.ITEMS_PHOTOS, map, 60_000); // 图片缓存 60 秒
-  return map;
+  const photo = (data?.photo as string | undefined) ?? null;
+  cacheSet(CACHE_KEYS.ITEM_PHOTO(id), photo, 60_000);
+  return photo;
 }
 
 /** 按 ID 查单个物品（全字段），带缓存 */

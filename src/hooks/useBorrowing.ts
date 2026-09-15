@@ -140,6 +140,12 @@ export function useBorrowing() {
       const now = nowISO();
       const safeDamagedQty = Math.min(damagedQty || 0, record.quantity);
 
+      // 尚未关联库存物品的记录无法归还 —— 不知道库存该还到哪件物品上。
+      // 必须在乐观更新【之前】拦下：否则界面会先变成「已还」而这里直接 return，
+      // 数据库纹丝不动，刷新才复原 —— 即"假归还"。
+      const targetItemId = record.itemId;
+      if (!targetItemId) return false;
+
       // 乐观：立即更新本地状态
       setRecords((prev) =>
         prev.map((r) =>
@@ -156,7 +162,7 @@ export function useBorrowing() {
       );
 
       try {
-        const item = await fetchItemById(record.itemId);
+        const item = await fetchItemById(targetItemId);
         if (!item) throw new Error('物品不存在');
 
         const restoredQty = record.quantity - safeDamagedQty;
@@ -169,7 +175,7 @@ export function useBorrowing() {
             damagedQty: safeDamagedQty > 0 ? safeDamagedQty : undefined,
             damagedNote: damagedNote || undefined,
           }),
-          updateItem(record.itemId, {
+          updateItem(targetItemId, {
             availableQty: item.availableQty + restoredQty,
             quantity: item.quantity - safeDamagedQty,
           }),

@@ -1,0 +1,36 @@
+name: Sync DingTalk Approvals
+
+on:
+  schedule:
+    # 每 10 分钟拉一次钉钉审批（约 4320 次/月，钉钉免费额度 1 万次/月）
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/sync-dingtalk.yml'
+
+# 只读仓库内容，同步任务不需要写权限
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run sync
+        env:
+          DINGTALK_CLIENT_ID: ${{ secrets.DINGTALK_CLIENT_ID }}
+          DINGTALK_CLIENT_SECRET: ${{ secrets.DINGTALK_CLIENT_SECRET }}
+          DINGTALK_PROCESS_CODE: ${{ secrets.DINGTALK_PROCESS_CODE }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: python3 scripts/sync-dingtalk.py

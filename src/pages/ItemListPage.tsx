@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef, type HTMLAttributes } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Input, Select, Row, Col, Tag, Button, Empty, Table, Space,
@@ -19,7 +19,7 @@ const { Title } = Typography;
 const { Meta } = Card;
 
 export default function ItemListPage() {
-  const { deleteItem, searchItems, loading, error, items } = useItems();
+  const { deleteItem, searchItems, loading, error, items, loadPhoto } = useItems();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
 
@@ -33,17 +33,54 @@ export default function ItemListPage() {
     [searchItems, search, category, statusFilter],
   );
 
+  // ===== 视口优先加载图片 =====
+  // 滚到哪张卡片，哪张的图片先拉。不再一次性拉全部 ——
+  // 那要等 809KB / 4.5 秒才出第一张，期间一张都显示不出来。
+  const ioRef = useRef<IntersectionObserver | null>(null);
+  const loadPhotoRef = useRef(loadPhoto);
+  loadPhotoRef.current = loadPhoto;
+
+  useEffect(() => {
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const el = entry.target as HTMLElement;
+          const id = el.dataset.itemId;
+          if (id) loadPhotoRef.current(id);
+          el.dataset.photoRequested = '1';
+          io.unobserve(el); // 已触发的不用再观察
+        }
+      },
+      { rootMargin: '250px 0px' }, // 提前 250px 开始加载，滚到就能看到
+    );
+    ioRef.current = io;
+    return () => {
+      io.disconnect();
+      ioRef.current = null;
+    };
+  }, []);
+
+  // 每次渲染后把新出现的卡片登记进观察器（重复 observe 是无害的）
+  useEffect(() => {
+    const io = ioRef.current;
+    if (!io) return;
+    document
+      .querySelectorAll<HTMLElement>('[data-item-id]:not([data-photo-requested])')
+      .forEach((el) => io.observe(el));
+  });
+
   const handleDelete = (id: string) => {
     deleteItem(id);
     message.success('物品已删除');
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (filteredItems.length === 0) {
       message.warning('没有可导出的物品数据');
       return;
     }
-    exportItemsToExcel(filteredItems);
+    await exportItemsToExcel(filteredItems);
     message.success(`已导出 ${filteredItems.length} 条物品记录`);
   };
 
@@ -214,7 +251,10 @@ export default function ItemListPage() {
               <Row gutter={[12, 12]}>
                 {filteredItems.map((item) => (
                   <Col xs={12} sm={8} md={6} lg={6} key={item.id}>
-                    <motion.div variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}>
+                    <motion.div
+                      variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
+                      data-item-id={item.id}
+                    >
                       <Card
                         hoverable
                         className="item-mobile-card"
@@ -291,7 +331,9 @@ export default function ItemListPage() {
                 onRow={(record) => ({
                   onClick: () => navigate(`/items/${record.id}/borrow`),
                   style: { cursor: 'pointer' },
-                })}
+                  // 供 IntersectionObserver 识别行 —— 进入视口才加载该行图片
+                  'data-item-id': record.id,
+                } as HTMLAttributes<HTMLElement>)}
               />
             </Card>
           )}

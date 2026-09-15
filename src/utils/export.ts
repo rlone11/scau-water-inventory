@@ -1,8 +1,17 @@
-import * as XLSX from 'xlsx';
 import type { BorrowRecord, Item, ItemCategory } from '../types';
 import { STATUS_LABELS, CATEGORY_LABELS } from '../types';
 
-export function exportRecordsToExcel(records: BorrowRecord[]): void {
+/**
+ * xlsx 压缩后 276KB。改成点「导出 Excel」时才动态加载 ——
+ * 之前是静态引入，导致只要打开「物品管理」「借记记录」页，
+ * 不管点不点导出都要先下载这 276KB。
+ */
+function loadXLSX() {
+  return import('xlsx');
+}
+
+export async function exportRecordsToExcel(records: BorrowRecord[]): Promise<void> {
+  const XLSX = await loadXLSX();
   const data = records.map((r) => ({
     '物品名称': r.itemName,
     '借用人': r.borrowerName,
@@ -32,7 +41,8 @@ export function exportRecordsToExcel(records: BorrowRecord[]): void {
   XLSX.writeFile(wb, `借用记录_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
-export function exportItemsToExcel(items: Item[]): void {
+export async function exportItemsToExcel(items: Item[]): Promise<void> {
+  const XLSX = await loadXLSX();
   const data = items.map((item) => ({
     '编号': item.code,
     '名称': item.name,

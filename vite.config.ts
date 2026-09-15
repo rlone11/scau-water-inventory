@@ -15,7 +15,8 @@ export default defineConfig({
           antd: ['antd', '@ant-design/icons'],
           recharts: ['recharts'],
           framer: ['framer-motion'],
-          xlsx: ['xlsx'],
+          // xlsx 不列入：它现在由业务代码动态 import，Rollup 会自动分成独立分包，
+          // 此处再写一遍是多余的（实测两种写法产物完全一致）
         },
       },
     },

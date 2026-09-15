@@ -42,7 +42,8 @@ export interface Item {
 
 export interface BorrowRecord {
   id: string;
-  itemId: string;
+  /** 关联的库存物品 ID。钉钉同步过来但尚未匹配的记录为 null */
+  itemId: string | null;
   itemName: string;
   borrowerName: string;
   borrowerId: string;
@@ -56,6 +57,8 @@ export interface BorrowRecord {
   status: BorrowStatus;
   damagedQty?: number;
   damagedNote?: string;
+  /** 来源钉钉的审批实例 ID；手工录入的记录为空 */
+  dingtalkInstanceId?: string;
 }
 
 export interface StatData {

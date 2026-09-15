@@ -2,10 +2,11 @@ import { supabase } from '../lib/supabase';
 import type { BorrowRecord, BorrowStatus } from '../types';
 import { cacheGet, cacheSet, cacheInvalidate, CACHE_KEYS } from '../lib/cache';
 
-function rowToRecord(row: Record<string, unknown>): BorrowRecord {
+export function rowToRecord(row: Record<string, unknown>): BorrowRecord {
   return {
     id: row.id as string,
-    itemId: row.item_id as string,
+    itemId: (row.item_id as string | null) ?? null,
+    dingtalkInstanceId: (row.dingtalk_instance_id as string | null) ?? undefined,
     itemName: row.item_name as string,
     borrowerName: row.borrower_name as string,
     borrowerId: row.borrower_id as string,

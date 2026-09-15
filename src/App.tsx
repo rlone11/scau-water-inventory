@@ -14,6 +14,8 @@ const ItemListPage = lazy(() => import('./pages/ItemListPage'));
 const ItemFormPage = lazy(() => import('./pages/ItemFormPage'));
 const BorrowPage = lazy(() => import('./pages/BorrowPage'));
 const RecordsPage = lazy(() => import('./pages/RecordsPage'));
+const DingTalkPage = lazy(() => import('./pages/DingTalkPage'));
+const ReturnPage = lazy(() => import('./pages/ReturnPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 const Loading = () => (
@@ -38,6 +40,8 @@ function App() {
                 <Route path="/items/:id/edit" element={<ItemFormPage />} />
                 <Route path="/items/:id/borrow" element={<BorrowPage />} />
                 <Route path="/records" element={<RecordsPage />} />
+                <Route path="/dingtalk" element={<DingTalkPage />} />
+                <Route path="/returns" element={<ReturnPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>

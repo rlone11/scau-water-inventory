@@ -59,7 +59,8 @@ export function cacheSize(): number {
 // ===== 预定义缓存键常量 =====
 export const CACHE_KEYS = {
   ITEMS_LIST: 'items:list',
-  ITEMS_PHOTOS: 'items:photos',
   ITEM_BY_ID: (id: string) => `items:${id}`,
+  /** 单条物品的图片 —— 视口按需加载，避免重复请求同一张图 */
+  ITEM_PHOTO: (id: string) => `items:photo:${id}`,
   RECORDS_LIST: 'records:list',
 } as const;

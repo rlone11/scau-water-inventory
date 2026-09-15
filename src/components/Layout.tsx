@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout as AntLayout, Menu, Button, Drawer, Dropdown, message } from 'antd';
 import {
@@ -9,6 +9,8 @@ import {
   LogoutOutlined,
   UserOutlined,
   SettingOutlined,
+  CloudSyncOutlined,
+  UndoOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
@@ -17,6 +19,8 @@ import BackToTop from './BackToTop';
 import BreadcrumbNav from './BreadcrumbNav';
 import QuickNav from './QuickNav';
 import RefreshButton from './RefreshButton';
+import PageTransition from './PageTransition';
+import { schedulePrefetch } from '../lib/prefetch';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -24,6 +28,8 @@ const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '物品数据' },
   { key: '/items', icon: <AppstoreOutlined />, label: '物品管理' },
   { key: '/records', icon: <FileTextOutlined />, label: '借记记录' },
+  { key: '/dingtalk', icon: <CloudSyncOutlined />, label: '钉钉审批' },
+  { key: '/returns', icon: <UndoOutlined />, label: '归还确认' },
 ];
 
 export default function MainLayout() {
@@ -34,6 +40,13 @@ export default function MainLayout() {
   const { isAdmin, logout } = useAuth();
 
   useKeyboardShortcuts();
+
+  // 首屏稳定后预热其余页面分块，避免首次切换路由时闪 loading 圈把转场打断。
+  // 仅在正式构建启用 —— 开发模式下 Vite 逐个模块提供，预热会引发上千个模块请求，
+  // 把主线程占满，反而让页面卡在加载态。
+  useEffect(() => {
+    if (import.meta.env.PROD) schedulePrefetch();
+  }, []);
 
   const selectedKey = '/' + location.pathname.split('/').filter(Boolean)[0] || '/';
 
@@ -61,16 +74,28 @@ export default function MainLayout() {
           justifyContent: collapsed ? 'center' : 'flex-start',
         }}
       >
-        <img
-          src={`${import.meta.env.BASE_URL}images/镂空院徽2.png`}
-          alt="水利水电学院"
+        {/* 院徽是黑色镂空透明底，直接放在深蓝侧边栏上几乎看不见，
+            故垫一个白色圆底 —— 黑色纹样立刻清晰，外沿也自然形成一圈白边 */}
+        <div
           style={{
             width: collapsed ? 36 : 40,
             height: collapsed ? 36 : 40,
+            borderRadius: '50%',
+            background: '#ffffff',
             flexShrink: 0,
-            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
           }}
-        />
+        >
+          <img
+            src={`${import.meta.env.BASE_URL}images/镂空院徽2.png`}
+            alt="水利水电学院"
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+          />
+        </div>
         {!collapsed && (
           <div style={{ overflow: 'hidden' }}>
             <div style={{ color: '#fff', fontWeight: 700, fontSize: 14, lineHeight: 1.3, whiteSpace: 'nowrap' }}>
@@ -237,8 +262,10 @@ export default function MainLayout() {
 
         {/* Page content */}
         <Content style={{ padding: '16px 24px', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
-          <BreadcrumbNav />
-          <Outlet />
+          <PageTransition>
+            <BreadcrumbNav />
+            <Outlet />
+          </PageTransition>
         </Content>
 
         {/* Footer */}

@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Input, Select, Row, Col, Table, Tag, Button, Space,
-  Modal, InputNumber, Checkbox, message, Typography, Empty, Badge, Spin,
+  message, Typography, Empty, Badge, Spin,
 } from 'antd';
 import {
   SearchOutlined, DownloadOutlined, UndoOutlined,
@@ -12,7 +12,9 @@ import { motion } from 'framer-motion';
 import dayjs from 'dayjs';
 import { useBorrowing } from '../hooks/useBorrowing';
 import { useAuth } from '../contexts/AuthContext';
+import { fetchPendingCount } from '../services/dingtalkService';
 import { exportRecordsToExcel } from '../utils/export';
+import ReturnConfirmModal from '../components/ReturnConfirmModal';
 import { STATUS_LABELS, type BorrowRecord } from '../types';
 
 const { Title } = Typography;
@@ -26,9 +28,17 @@ export default function RecordsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnRecord, setReturnRecord] = useState<BorrowRecord | null>(null);
-  const [hasDamage, setHasDamage] = useState(false);
-  const [damagedQty, setDamagedQty] = useState<number | null>(null);
-  const [damagedNote, setDamagedNote] = useState('');
+  /** 钉钉待关联条数 —— 仅用于顶部提示条 */
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    fetchPendingCount()
+      .then((n) => { if (!cancelled) setPendingCount(n); })
+      .catch(() => { /* 表结构未就绪等情况静默忽略，不打扰用户 */ });
+    return () => { cancelled = true; };
+  }, [isAdmin]);
 
   const filtered = useMemo(
     () => searchRecords(search, statusFilter),
@@ -37,29 +47,11 @@ export default function RecordsPage() {
 
   const openReturnModal = (record: BorrowRecord) => {
     setReturnRecord(record);
-    setHasDamage(false);
-    setDamagedQty(null);
-    setDamagedNote('');
     setReturnModalOpen(true);
   };
 
-  const handleReturn = async () => {
-    if (!returnRecord) return;
-    const success = await returnItem(
-      returnRecord.id,
-      hasDamage ? (damagedQty || 0) : 0,
-      hasDamage ? damagedNote : undefined,
-    );
-    if (success) {
-      message.success('归还确认成功！');
-      setReturnModalOpen(false);
-    } else {
-      message.error('操作失败');
-    }
-  };
-
-  const handleExport = () => {
-    exportRecordsToExcel(records);
+  const handleExport = async () => {
+    await exportRecordsToExcel(records);
     message.success('导出成功！');
   };
 
@@ -126,6 +118,28 @@ export default function RecordsPage() {
         </Space>
       </div>
 
+      {/* 钉钉待关联提示 —— 点一下跳到钉钉审批页 */}
+      {isAdmin && pendingCount > 0 && (
+        <Card
+          size="small"
+          onClick={() => navigate('/dingtalk')}
+          style={{
+            marginBottom: 16,
+            borderRadius: 12,
+            borderColor: '#FDE68A',
+            background: '#FFFBEB',
+            cursor: 'pointer',
+          }}
+          styles={{ body: { padding: '10px 14px' } }}
+        >
+          <Space>
+            <ExclamationCircleOutlined style={{ color: '#F59E0B' }} />
+            <span style={{ color: '#92400E' }}>有 {pendingCount} 条钉钉审批记录待关联</span>
+            <span style={{ color: '#D97706', fontSize: 12 }}>去处理 →</span>
+          </Space>
+        </Card>
+      )}
+
       {/* Loading */}
       {loading && (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 240, flexDirection: 'column', gap: 16 }}>
@@ -179,78 +193,13 @@ export default function RecordsPage() {
         </>
       )}
 
-      {/* Return modal */}
-      <Modal
-        title={
-          <span>
-            <ExclamationCircleOutlined style={{ color: '#0EA5E9', marginRight: 8 }} />
-            归还确认
-          </span>
-        }
+      {/* Return modal —— 与「归还确认」页共用同一个组件 */}
+      <ReturnConfirmModal
+        record={returnRecord}
         open={returnModalOpen}
-        onOk={handleReturn}
-        onCancel={() => setReturnModalOpen(false)}
-        okText="确认归还"
-        cancelText="取消"
-        okButtonProps={{
-          style: { background: 'linear-gradient(135deg, #0EA5E9, #0284C7)', border: 'none' },
-        }}
-      >
-        {returnRecord && (
-          <div>
-            <p style={{ fontSize: 14, marginBottom: 16 }}>
-              物品：<strong>{returnRecord.itemName}</strong>
-              借用人：<strong>{returnRecord.borrowerName}</strong>
-              数量：<strong>{returnRecord.quantity} 件</strong>
-            </p>
-
-            <Checkbox
-              checked={hasDamage}
-              onChange={(e) => {
-                setHasDamage(e.target.checked);
-                if (!e.target.checked) setDamagedQty(null);
-              }}
-              style={{ marginBottom: 12, fontSize: 14 }}
-            >
-              物品有损坏/消耗
-            </Checkbox>
-
-            {hasDamage && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                style={{ marginLeft: 24 }}
-              >
-                <div style={{ fontSize: 13, color: '#64748B', marginBottom: 6 }}>
-                  损坏/消耗数量：
-                </div>
-                <InputNumber
-                  min={1}
-                  max={returnRecord.quantity}
-                  value={damagedQty}
-                  onChange={(v) => setDamagedQty(v)}
-                  placeholder={`最多 ${returnRecord.quantity} 件`}
-                  style={{ width: '100%' }}
-                  addonAfter="件"
-                />
-                <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 4 }}>
-                  损坏的物品将从库存总数中扣除；完好部分正常归还入库
-                </div>
-                <div style={{ fontSize: 13, color: '#64748B', marginTop: 12, marginBottom: 6 }}>
-                  损坏说明（选填）：
-                </div>
-                <Input.TextArea
-                  rows={2}
-                  value={damagedNote}
-                  onChange={(e) => setDamagedNote(e.target.value)}
-                  placeholder="如：屏幕碎裂、外壳磨损..."
-                  maxLength={200}
-                />
-              </motion.div>
-            )}
-          </div>
-        )}
-      </Modal>
+        onClose={() => setReturnModalOpen(false)}
+        onConfirm={returnItem}
+      />
     </div>
   );
 }

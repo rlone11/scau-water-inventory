@@ -1,5 +1,8 @@
-import { useMotionValue, motion, type Variants, type Transition } from 'framer-motion';
+import { useMotionValue, useSpring, motion, type Variants, type Transition } from 'framer-motion';
 import { useRef, type ReactNode, type CSSProperties } from 'react';
+
+/** 眩光光斑的直径（px）—— 固定尺寸，靠 transform 移动 */
+const GLARE_SIZE = 360;
 
 interface TiltCardProps {
   children: ReactNode;
@@ -19,8 +22,8 @@ interface TiltCardProps {
 
 export default function TiltCard({
   children,
-  maxTilt = 8,
-  glareColor = 'rgba(255,255,255,0.1)',
+  maxTilt = 13,
+  glareColor = 'rgba(14,165,233,0.25)',
   perspective = 800,
   className,
   style,
@@ -33,8 +36,15 @@ export default function TiltCard({
   const rotateX = useMotionValue(0);
   const rotateY = useMotionValue(0);
   const glareOpacity = useMotionValue(0);
-  const glareX = useMotionValue(50);
-  const glareY = useMotionValue(50);
+  /** 眩光光斑中心的位移（px）—— 用 transform 移动，避免每帧重算渐变字符串 */
+  const glareX = useMotionValue(0);
+  const glareY = useMotionValue(0);
+
+  // 弹簧跟随：保留跟手的手感，避免生硬跳变。之前用 CSS transition 做阻尼会吃掉幅度感
+  const springRotateX = useSpring(rotateX, { stiffness: 400, damping: 30 });
+  const springRotateY = useSpring(rotateY, { stiffness: 400, damping: 30 });
+  const springGlare = useSpring(glareOpacity, { stiffness: 160, damping: 22 });
+
   const ref = useRef<HTMLDivElement>(null);
 
   // Respect hover capability
@@ -50,8 +60,9 @@ export default function TiltCard({
     rotateX.set((y * 2 - 1) * -maxTilt);
     rotateY.set((x * 2 - 1) * maxTilt);
     glareOpacity.set(1);
-    glareX.set(x * 100);
-    glareY.set(y * 100);
+    // 直接记相对卡片的像素位移 —— 光斑靠 transform 移动，不重算渐变
+    glareX.set(e.clientX - rect.left);
+    glareY.set(e.clientY - rect.top);
   };
 
   const handleMouseLeave = () => {
@@ -83,29 +94,46 @@ export default function TiltCard({
     >
       <motion.div
         style={{
-          rotateX: canHover ? rotateX : 0,
-          rotateY: canHover ? rotateY : 0,
+          rotateX: canHover ? springRotateX : 0,
+          rotateY: canHover ? springRotateY : 0,
           transformStyle: 'preserve-3d',
           position: 'relative',
           width: '100%',
           height: '100%',
-          transition: 'rotateX 0.3s ease, rotateY 0.3s ease',
         }}
       >
         {children}
 
-        {/* Glare overlay */}
+        {/* 眩光：一个固定大小的光斑，靠 transform 跟随鼠标。
+            比每帧重算 radial-gradient 字符串便宜得多 —— 后者是重绘型属性，
+            每帧都要重新光栅化整块渐变。 */}
         <motion.div
           style={{
             position: 'absolute',
             inset: 0,
-            opacity: glareOpacity,
-            background: `radial-gradient(circle at ${glareX.get()}% ${glareY.get()}%, ${glareColor} 0%, transparent 60%)`,
+            opacity: springGlare,
             pointerEvents: 'none',
             borderRadius: 'inherit',
+            overflow: 'hidden',
             zIndex: 1,
           }}
-        />
+        >
+          <motion.div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: GLARE_SIZE,
+              height: GLARE_SIZE,
+              marginLeft: -GLARE_SIZE / 2,
+              marginTop: -GLARE_SIZE / 2,
+              borderRadius: '50%',
+              background: `radial-gradient(circle, ${glareColor} 0%, transparent 70%)`,
+              x: glareX,
+              y: glareY,
+            }}
+          />
+        </motion.div>
       </motion.div>
     </motion.div>
   );

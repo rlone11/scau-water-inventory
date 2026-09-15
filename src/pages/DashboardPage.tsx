@@ -190,7 +190,7 @@ export default function DashboardPage() {
           {statCards.map((card, idx) => (
             <Col xs={12} sm={12} md={6} key={card.key}>
               <TiltCard
-                maxTilt={8}
+                maxTilt={13}
                 variants={{
                   hidden: { opacity: 0, y: 24, scale: 0.95 },
                   visible: {
