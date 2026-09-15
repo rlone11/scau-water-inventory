@@ -26,6 +26,27 @@ jobs:
         with:
           python-version: '3.11'
 
+      # 配置自检：只报告「有没有配」和长度，绝不打印值本身。
+      # 少了这一步的话，配置没读到只会得到一句「缺少配置」，
+      # 得翻日志才知道是哪个 —— 2026-09-15 排查过一次，加上省事。
+      - name: Check secrets
+        env:
+          DINGTALK_CLIENT_ID: ${{ secrets.DINGTALK_CLIENT_ID }}
+          DINGTALK_CLIENT_SECRET: ${{ secrets.DINGTALK_CLIENT_SECRET }}
+          DINGTALK_PROCESS_CODE: ${{ secrets.DINGTALK_PROCESS_CODE }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          for name in DINGTALK_CLIENT_ID DINGTALK_CLIENT_SECRET DINGTALK_PROCESS_CODE \
+                      VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
+            value="${!name}"
+            if [ -z "$value" ]; then
+              echo "❌ $name 未配置（检查是不是加到了 Variables 标签页）"
+            else
+              echo "✅ $name 已配置（长度 ${#value}）"
+            fi
+          done
+
       - name: Run sync
         env:
           DINGTALK_CLIENT_ID: ${{ secrets.DINGTALK_CLIENT_ID }}
