@@ -1,5 +1,5 @@
 export type ItemCategory = 'fixed_assets' | 'consumables' | 'activity';
-export type BorrowStatus = 'borrowed' | 'returned' | 'overdue' | 'ignored';
+export type BorrowStatus = 'borrowed' | 'returned' | 'overdue' | 'ignored' | 'consumed';
 export type UserRole = 'admin' | 'user' | null;
 
 export const CATEGORY_LABELS: Record<ItemCategory, string> = {
@@ -19,6 +19,7 @@ export const STATUS_LABELS: Record<BorrowStatus, string> = {
   returned: '已归还',
   overdue: '已逾期',
   ignored: '已忽略',
+  consumed: '已消耗',
 };
 
 export const STATUS_COLORS: Record<BorrowStatus, string> = {
@@ -26,6 +27,7 @@ export const STATUS_COLORS: Record<BorrowStatus, string> = {
   returned: '#10B981',
   overdue: '#EF4444',
   ignored: '#94A3B8',
+  consumed: '#8B5CF6',
 };
 
 export interface Item {
@@ -57,8 +59,16 @@ export interface BorrowRecord {
   expectedReturnDate: string;
   actualReturnDate?: string;
   status: BorrowStatus;
-  damagedQty?: number;
-  damagedNote?: string;
+  /**
+   * 未回到库存的件数 —— 消耗掉或损坏报废的部分。
+   * 等于 quantity 时整条记录为「已消耗」，否则仍是「已归还」+ 这个标签。
+   *
+   * ⚠️ 数据库列仍叫 `damaged_qty`（历史命名，未做迁移），
+   * 与 `damaged_note` 的对应关系集中在 recordService 的 rowToRecord/recordToRow 里。
+   */
+  consumedQty?: number;
+  /** 消耗/损坏说明 */
+  consumedNote?: string;
   /** 来源钉钉的审批实例 ID；手工录入的记录为空 */
   dingtalkInstanceId?: string;
   /** 被管理员忽略的时间。有值即表示这条已从「待关联」移走，可撤销 */

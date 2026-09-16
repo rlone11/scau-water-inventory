@@ -21,8 +21,10 @@ export function rowToRecord(row: Record<string, unknown>): BorrowRecord {
     // 被忽略的记录统一显示为「已忽略」。忽略是可撤销的，所以不去改数据库的
     // status 列，只在这里覆盖显示值 —— 恢复时状态会自动变回原样。
     status: row.ignored_at ? 'ignored' : (row.status as BorrowStatus),
-    damagedQty: row.damaged_qty as number | undefined,
-    damagedNote: row.damaged_note as string | undefined,
+    // ⚠️ 数据库列名是历史遗留的 damaged_*（未做迁移），
+    //    语义已统一为「消耗/损坏」= 没回到库存的那部分。只在这里做映射。
+    consumedQty: row.damaged_qty as number | undefined,
+    consumedNote: row.damaged_note as string | undefined,
   };
 }
 
@@ -42,8 +44,9 @@ function recordToRow(rec: Partial<BorrowRecord> & { id: string }): Record<string
     ['borrow_date', rec.borrowDate],
     ['expected_return_date', rec.expectedReturnDate],
     ['actual_return_date', rec.actualReturnDate],
-    ['damaged_qty', rec.damagedQty],
-    ['damaged_note', rec.damagedNote],
+    // 写入时同样映射回历史列名，见 rowToRecord 上方说明
+    ['damaged_qty', rec.consumedQty],
+    ['damaged_note', rec.consumedNote],
     ['status', rec.status],
   ];
   for (const [key, val] of map) {

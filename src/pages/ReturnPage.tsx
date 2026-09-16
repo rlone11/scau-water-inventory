@@ -42,7 +42,7 @@ export default function ReturnPage() {
   const [returnRecord, setReturnRecord] = useState<BorrowRecord | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
 
-  /** 钉钉待关联条数 —— 这些还没关联物品，按规则不能归还 */
+  /** 钉钉待关联条数 —— 这些还没关联物品，按规则不能核销 */
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function ReturnPage() {
     return () => { cancelled = true; };
   }, [isAdmin]);
 
-  /** 只有关联了库存物品的记录才能归还 —— 不知道库存该还到哪件物品上 */
+  /** 只有关联了库存物品的记录才能核销 —— 不知道库存该还到哪件物品上 */
   const outstanding = useMemo(
     () => records.filter((r) => isOutstanding(r) && r.itemId),
     [records],
@@ -95,8 +95,9 @@ export default function ReturnPage() {
     setReturnModalOpen(true);
   };
 
-  const handleConfirm = async (recordId: string, damagedQty: number, damagedNote?: string) => {
-    const ok = await returnItem(recordId, damagedQty, damagedNote);
+  /** 核销：consumedQty 为没回到库存的件数（0 = 全部归还） */
+  const handleConfirm = async (recordId: string, consumedQty: number, consumedNote?: string) => {
+    const ok = await returnItem(recordId, consumedQty, consumedNote);
     if (ok) setShowCelebration(true);
     return ok;
   };
@@ -148,7 +149,7 @@ export default function ReturnPage() {
           icon={<UndoOutlined />}
           onClick={() => openReturnModal(record)}
         >
-          确认归还
+          核销
         </Button>
       ),
     },
@@ -167,14 +168,14 @@ export default function ReturnPage() {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 240, flexDirection: 'column', gap: 16 }}>
         <Spin size="large" />
-        <span style={{ color: '#94A3B8', fontSize: 14 }}>正在加载待归还数据...</span>
+        <span style={{ color: '#94A3B8', fontSize: 14 }}>正在加载待核销数据...</span>
       </div>
     );
   }
 
   return (
     <div style={{ paddingBottom: 32 }}>
-      <Title level={4} style={{ marginTop: 0, marginBottom: 16, color: '#0C4A6E' }}>归还确认</Title>
+      <Title level={4} style={{ marginTop: 0, marginBottom: 16, color: '#0C4A6E' }}>物品核销</Title>
 
       <motion.div
         variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.08 } } }}
@@ -196,7 +197,7 @@ export default function ReturnPage() {
               <Space wrap>
                 <ExclamationCircleOutlined style={{ color: '#F59E0B' }} />
                 <span style={{ color: '#92400E' }}>
-                  还有 {pendingCount} 条钉钉记录没关联到库存物品，关联后才能归还
+                  还有 {pendingCount} 条钉钉记录没关联到库存物品，关联后才能核销
                 </span>
                 <span style={{ color: '#D97706', fontSize: 12 }}>去钉钉审批页处理 →</span>
               </Space>
@@ -209,7 +210,7 @@ export default function ReturnPage() {
           <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
             <Col xs={12} sm={6}>
               <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 16 } }}>
-                <div style={{ fontSize: 13, color: '#64748B' }}>待归还</div>
+                <div style={{ fontSize: 13, color: '#64748B' }}>待核销</div>
                 <div style={{ marginTop: 4, lineHeight: 1 }}>
                   <span style={{ fontSize: 32, fontWeight: 700, color: '#0EA5E9' }}>{outstanding.length}</span>
                   <span style={{ fontSize: 14, color: '#94A3B8', fontWeight: 400, marginLeft: 4 }}>件</span>
@@ -261,7 +262,7 @@ export default function ReturnPage() {
                     onChange={(v) => setOverdueOnly(v === 'overdue')}
                     style={{ width: '100%' }}
                     options={[
-                      { value: 'all', label: '全部待归还' },
+                      { value: 'all', label: '全部待核销' },
                       { value: 'overdue', label: `仅看逾期（${overdueCount}）` },
                     ]}
                   />
@@ -277,7 +278,7 @@ export default function ReturnPage() {
             <div className="empty-water" style={{ borderRadius: 12, padding: 40, background: '#fff' }}>
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={<Text type="secondary">没有待归还的物品，都还清了</Text>}
+                description={<Text type="secondary">没有待核销的记录，都结清了</Text>}
               />
             </div>
           ) : filtered.length === 0 ? (
@@ -295,7 +296,7 @@ export default function ReturnPage() {
                 scroll={{ x: 700 }}
                 locale={{
                   emptyText: (
-                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary">没有待归还的记录</Text>} />
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary">没有待核销的记录</Text>} />
                   ),
                 }}
               />

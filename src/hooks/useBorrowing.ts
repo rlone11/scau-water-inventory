@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import type { BorrowRecord } from '../types';
+import type { BorrowRecord, BorrowStatus } from '../types';
 import { generateId, nowISO } from '../utils/storage';
 import { fetchRecords, createRecord, updateRecord } from '../services/recordService';
 import { fetchItemById, updateItem } from '../services/itemService';
@@ -132,13 +132,22 @@ export function useBorrowing() {
   // ---- 乐观归还 ----
 
   const returnItem = useCallback(
-    async (recordId: string, damagedQty?: number, damagedNote?: string) => {
+    async (recordId: string, consumedQty?: number, consumedNote?: string) => {
       // 先从当前列表找记录
       const record = records.find((r) => r.id === recordId);
-      if (!record || record.status === 'returned' || record.status === 'ignored') return false;
+      if (!record) return false;
+      // 只有借出中/已逾期可以核销；已归还、已消耗、已忽略一律拒绝
+      if (record.status !== 'borrowed' && record.status !== 'overdue') return false;
 
       const now = nowISO();
-      const safeDamagedQty = Math.min(damagedQty || 0, record.quantity);
+      const safeConsumedQty = Math.min(consumedQty || 0, record.quantity);
+      /** 真正回到库存的件数 */
+      const restoredQty = record.quantity - safeConsumedQty;
+      /**
+       * 一件都没回到库存 = 整条记录「已消耗」；
+       * 部分消耗仍是「已归还」，消耗数量挂在 consumedQty 上单独显示。
+       */
+      const settledStatus: BorrowStatus = restoredQty === 0 ? 'consumed' : 'returned';
 
       // 尚未关联库存物品的记录无法归还 —— 不知道库存该还到哪件物品上。
       // 必须在乐观更新【之前】拦下：否则界面会先变成「已还」而这里直接 return，
@@ -152,10 +161,11 @@ export function useBorrowing() {
           r.id === recordId
             ? {
                 ...r,
-                status: 'returned' as const,
+                status: settledStatus,
+                // 核销时间。被消耗的记录并没有"归还日期"，这一列的实际含义是"记录结清时间"
                 actualReturnDate: now,
-                damagedQty: safeDamagedQty > 0 ? safeDamagedQty : undefined,
-                damagedNote: damagedNote || undefined,
+                consumedQty: safeConsumedQty > 0 ? safeConsumedQty : undefined,
+                consumedNote: consumedNote || undefined,
               }
             : r,
         ),
@@ -165,19 +175,18 @@ export function useBorrowing() {
         const item = await fetchItemById(targetItemId);
         if (!item) throw new Error('物品不存在');
 
-        const restoredQty = record.quantity - safeDamagedQty;
-
         // 并行：更新记录 + 更新库存
         await Promise.all([
           updateRecord(recordId, {
-            status: 'returned',
+            status: settledStatus,
             actualReturnDate: now,
-            damagedQty: safeDamagedQty > 0 ? safeDamagedQty : undefined,
-            damagedNote: damagedNote || undefined,
+            consumedQty: safeConsumedQty > 0 ? safeConsumedQty : undefined,
+            consumedNote: consumedNote || undefined,
           }),
           updateItem(targetItemId, {
+            // 消耗掉的部分不回补可借，直接从库存总数里扣掉
             availableQty: item.availableQty + restoredQty,
-            quantity: item.quantity - safeDamagedQty,
+            quantity: item.quantity - safeConsumedQty,
           }),
         ]);
 
@@ -189,7 +198,7 @@ export function useBorrowing() {
         setRecords((prev) =>
           prev.map((r) =>
             r.id === recordId
-              ? { ...r, status: record.status, actualReturnDate: record.actualReturnDate, damagedQty: record.damagedQty, damagedNote: record.damagedNote }
+              ? { ...r, status: record.status, actualReturnDate: record.actualReturnDate, consumedQty: record.consumedQty, consumedNote: record.consumedNote }
               : r,
           ),
         );

@@ -15,9 +15,25 @@ import { useAuth } from '../contexts/AuthContext';
 import { fetchPendingCount } from '../services/dingtalkService';
 import { exportRecordsToExcel } from '../utils/export';
 import ReturnConfirmModal from '../components/ReturnConfirmModal';
-import { STATUS_LABELS, type BorrowRecord } from '../types';
+import { STATUS_LABELS, type BorrowRecord, type BorrowStatus } from '../types';
 
 const { Title } = Typography;
+
+/**
+ * 状态 → Ant Badge 语义色。
+ * 写成 Record<BorrowStatus, …> 而不是三元判断，是为了让编译器保证每种状态都有颜色 ——
+ * 新增状态却忘了配色的，这里会直接报错。
+ */
+const BADGE_BY_STATUS: Record<
+  BorrowStatus,
+  'success' | 'processing' | 'default' | 'error' | 'warning'
+> = {
+  borrowed: 'processing',
+  overdue: 'error',
+  returned: 'success',
+  ignored: 'default',
+  consumed: 'warning',
+};
 
 export default function RecordsPage() {
   const { records, returnItem, searchRecords, loading } = useBorrowing();
@@ -78,11 +94,13 @@ export default function RecordsPage() {
       title: '状态', dataIndex: 'status', key: 'status', width: 80,
       render: (status: string, record: BorrowRecord) => (
         <Space size={4}>
-          <Badge status={status === 'returned' ? 'success' : status === 'overdue' ? 'error' : status === 'ignored' ? 'default' : 'processing'}
-            text={<span style={{ fontSize: 12 }}>{STATUS_LABELS[status as keyof typeof STATUS_LABELS]}</span>}
+          <Badge status={BADGE_BY_STATUS[status as BorrowStatus]}
+            text={<span style={{ fontSize: 12 }}>{STATUS_LABELS[status as BorrowStatus]}</span>}
           />
-          {record.damagedQty && record.damagedQty > 0 && (
-            <Tag color="orange" style={{ fontSize: 10 }}>损{record.damagedQty}件</Tag>
+          {/* 部分消耗：状态仍是「已归还」，靠这个标签补出消耗件数。
+              全部消耗时状态本身就是「已消耗」，不重复显示。 */}
+          {record.status === 'returned' && !!record.consumedQty && record.consumedQty > 0 && (
+            <Tag color="purple" style={{ fontSize: 10 }}>消耗 {record.consumedQty} 件</Tag>
           )}
         </Space>
       ),
@@ -95,16 +113,18 @@ export default function RecordsPage() {
           case 'overdue':
             return (
               <Button type="link" size="small" icon={<UndoOutlined />} onClick={() => openReturnModal(record)}>
-                归还
+                核销
               </Button>
             );
           case 'returned':
             return <Tag icon={<CheckCircleOutlined />} color="success" style={{ fontSize: 11 }}>已还</Tag>;
-          // 已忽略 = 管理员已决定不处理这条，没有任何可执行的操作。
+          // 已忽略 = 管理员已决定不处理这条；已消耗 = 物品没回来，账已结清。
+          // 两者都是终态，没有任何可执行的操作。
           // 这里原先写的是「能归还 ? 归还 : 已还」的二元判断，ignored 掉进 else
-          // 被渲染成绿色的「已还」，和状态列的「已忽略」当场矛盾 —— 且语义也错，
-          // 忽略 ≠ 已归还。改成穷尽 switch 后不可能再漏。
+          // 被渲染成绿色的「已还」，和状态列的「已忽略」当场矛盾 —— 且语义也错。
+          // 改成穷尽 switch 后不可能再漏。
           case 'ignored':
+          case 'consumed':
             return <span style={{ color: '#CBD5E1' }}>—</span>;
           default: {
             // 编译期兜底：将来给 BorrowStatus 加了新状态却忘了在这里处理，这行会报错
@@ -206,7 +226,7 @@ export default function RecordsPage() {
         </>
       )}
 
-      {/* Return modal —— 与「归还确认」页共用同一个组件 */}
+      {/* 核销弹窗 —— 与「物品核销」页共用同一个组件 */}
       <ReturnConfirmModal
         record={returnRecord}
         open={returnModalOpen}

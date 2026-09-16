@@ -10,7 +10,7 @@ import {
   UserOutlined,
   SettingOutlined,
   CloudSyncOutlined,
-  UndoOutlined,
+  AuditOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
@@ -29,7 +29,7 @@ const menuItems = [
   { key: '/items', icon: <AppstoreOutlined />, label: '物品管理' },
   { key: '/records', icon: <FileTextOutlined />, label: '借记记录' },
   { key: '/dingtalk', icon: <CloudSyncOutlined />, label: '钉钉审批' },
-  { key: '/returns', icon: <UndoOutlined />, label: '归还确认' },
+  { key: '/returns', icon: <AuditOutlined />, label: '物品核销' },
 ];
 
 export default function MainLayout() {

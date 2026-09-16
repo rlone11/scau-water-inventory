@@ -24,7 +24,7 @@ export async function exportRecordsToExcel(records: BorrowRecord[]): Promise<voi
     '预计归还': r.expectedReturnDate.slice(0, 10),
     '实际归还': r.actualReturnDate ? r.actualReturnDate.slice(0, 10) : '-',
     '状态': STATUS_LABELS[r.status],
-    '损坏/消耗数量': r.damagedQty && r.damagedQty > 0 ? r.damagedQty : '-',
+    '消耗数量': r.consumedQty && r.consumedQty > 0 ? r.consumedQty : '-',
   }));
 
   const ws = XLSX.utils.json_to_sheet(data);
