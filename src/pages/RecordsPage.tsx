@@ -55,8 +55,6 @@ export default function RecordsPage() {
     message.success('导出成功！');
   };
 
-  const canReturn = (record: BorrowRecord) => record.status === 'borrowed' || record.status === 'overdue';
-
   const columns = [
     {
       title: '物品名称', dataIndex: 'itemName', key: 'itemName',
@@ -91,15 +89,30 @@ export default function RecordsPage() {
     },
     {
       title: '操作', key: 'actions', width: 80,
-      render: (_: unknown, record: BorrowRecord) => (
-        canReturn(record) ? (
-          <Button type="link" size="small" icon={<UndoOutlined />} onClick={() => openReturnModal(record)}>
-            归还
-          </Button>
-        ) : (
-          <Tag icon={<CheckCircleOutlined />} color="success" style={{ fontSize: 11 }}>已还</Tag>
-        )
-      ),
+      render: (_: unknown, record: BorrowRecord) => {
+        switch (record.status) {
+          case 'borrowed':
+          case 'overdue':
+            return (
+              <Button type="link" size="small" icon={<UndoOutlined />} onClick={() => openReturnModal(record)}>
+                归还
+              </Button>
+            );
+          case 'returned':
+            return <Tag icon={<CheckCircleOutlined />} color="success" style={{ fontSize: 11 }}>已还</Tag>;
+          // 已忽略 = 管理员已决定不处理这条，没有任何可执行的操作。
+          // 这里原先写的是「能归还 ? 归还 : 已还」的二元判断，ignored 掉进 else
+          // 被渲染成绿色的「已还」，和状态列的「已忽略」当场矛盾 —— 且语义也错，
+          // 忽略 ≠ 已归还。改成穷尽 switch 后不可能再漏。
+          case 'ignored':
+            return <span style={{ color: '#CBD5E1' }}>—</span>;
+          default: {
+            // 编译期兜底：将来给 BorrowStatus 加了新状态却忘了在这里处理，这行会报错
+            const unhandled: never = record.status;
+            return unhandled;
+          }
+        }
+      },
     },
   ];
 
