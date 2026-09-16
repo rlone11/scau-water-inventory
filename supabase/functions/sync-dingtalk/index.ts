@@ -1,9 +1,13 @@
 /**
  * 钉钉审批同步 —— Supabase Edge Function
  *
- * 与 scripts/sync-dingtalk.py 是同一套逻辑的两种实现。这里这份是生产用的：
- * 网站打开「钉钉审批」页时会调它，因此不受 GitHub Actions 定时器不可靠的影响
+ * 这里是唯一的生产实现：网站打开「钉钉审批」页时会调它，
+ * 因此不受 GitHub Actions 定时器不可靠的影响
  * （实测本仓库的 GitHub cron 会被延迟 2~5 小时，甚至直接被丢弃）。
+ *
+ * 原先并存的 Python 版 scripts/sync-dingtalk.py + GitHub 定时器方案已于
+ * 2026-09-16 移除 —— 两套逻辑同时跑会重复插入记录、重复扣库存。
+ * 备份在：~/Downloads/claude code/备份/scau-water-inventory-旧同步方案-2026-09-16/
  *
  * 为什么必须放在服务端：同步要用钉钉 AppSecret，
  * 而网站是公开的静态页面，密钥放进浏览器等于公开泄露。

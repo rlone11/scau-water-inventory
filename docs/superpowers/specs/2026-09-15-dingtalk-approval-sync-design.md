@@ -4,6 +4,13 @@
 - **项目**：四川农业大学水利水电学院物品管理系统
 - **目标**：把钉钉「物品借用2026-2027」审批的数据同步进网站，自动扣减库存，匹配不准的人工兜底
 
+> **⚠️ 现状更新（2026-09-16）**：本文档是 09-15 的设计记录，其中提到的
+> `scripts/sync-dingtalk.py` 与 `.github/workflows/sync-dingtalk.yml`（GitHub 定时器方案）
+> **已被移除**，原因是两套同步逻辑并存会重复插入记录、重复扣库存。
+> 现行唯一实现是 Supabase Edge Function：`supabase/functions/sync-dingtalk/index.ts`，
+> 由前端打开「钉钉审批」页时触发。被删文件已备份至
+> `~/Downloads/claude code/备份/scau-water-inventory-旧同步方案-2026-09-16/`。
+
 ---
 
 ## 1. 背景
