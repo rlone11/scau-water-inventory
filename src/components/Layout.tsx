@@ -284,6 +284,8 @@ export default function MainLayout() {
             alignItems: 'center',
             justifyContent: 'center',
             gap: 6,
+            // 窄屏上加了版本号后这一行会变长，允许折行免得被裁掉
+            flexWrap: 'wrap',
           }}
         >
           <img
@@ -291,7 +293,10 @@ export default function MainLayout() {
             alt="上善若水 知行合一"
             style={{ height: 16, opacity: 0.4 }}
           />
-          <span>· 四川农业大学水利水电学院 · {'© '} {new Date().getFullYear()}</span>
+          <span>
+            · 四川农业大学水利水电学院 · v{__APP_VERSION__} · {'© '}
+            {new Date().getFullYear()}
+          </span>
         </div>
       </AntLayout>
 

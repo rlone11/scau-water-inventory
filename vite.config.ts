@@ -1,7 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import pkg from './package.json';
 
 export default defineConfig({
+  // 版本号在构建时替换成字面量（不会把整个 package.json 打进客户端包），
+  // 页脚用它显示当前版本 —— 以前版本号只活在对话和备份文件夹名里，代码查不到
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [react()],
   base: process.env.VITE_DEPLOY_TARGET ? '/' : '/scau-water-inventory/',
   server: {
