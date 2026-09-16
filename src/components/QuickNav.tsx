@@ -7,6 +7,7 @@ import {
   HomeOutlined,
   AppstoreOutlined,
 } from '@ant-design/icons';
+import { entrySpring } from '../lib/motion';
 
 /** 需要显示快捷导航的深度页面 */
 const DEEP_PAGE_PATTERNS = [
@@ -52,7 +53,7 @@ export default function QuickNav() {
           initial={{ opacity: 0, x: -20, y: 10 }}
           animate={{ opacity: 1, x: 0, y: 0 }}
           exit={{ opacity: 0, x: -20, y: 10 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+          transition={entrySpring(300)}
           style={{
             position: 'fixed',
             bottom: 28,
@@ -114,8 +115,9 @@ export default function QuickNav() {
             </motion.div>
           </Tooltip>
 
-          {/* 快捷键提示 */}
+          {/* 快捷键提示（手机端由 .quicknav-hint 隐藏 —— 触屏没有 Alt 键） */}
           <div
+            className="quicknav-hint"
             style={{
               fontSize: 10,
               color: '#94A3B8',

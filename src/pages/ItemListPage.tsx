@@ -14,6 +14,7 @@ import { useItems } from '../hooks/useItems';
 import { useAuth } from '../contexts/AuthContext';
 import { CATEGORY_LABELS, CATEGORY_COLORS, type ItemCategory, type Item } from '../types';
 import { exportItemsToExcel } from '../utils/export';
+import { entrySpring } from '../lib/motion';
 
 const { Title } = Typography;
 const { Meta } = Card;
@@ -95,7 +96,7 @@ export default function ItemListPage() {
           <motion.div
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 250, damping: 18 }}
+            transition={entrySpring(250)}
             style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden' }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -263,7 +264,7 @@ export default function ItemListPage() {
                             <motion.div
                               initial={{ scale: 0.8, opacity: 0 }}
                               animate={{ scale: 1, opacity: 1 }}
-                              transition={{ type: 'spring', stiffness: 200, damping: 16 }}
+                              transition={entrySpring(200)}
                               style={{ height: 130, overflow: 'hidden', position: 'relative' }}
                               onClick={(e) => e.stopPropagation()}
                             >

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { VerticalAlignTopOutlined } from '@ant-design/icons';
+import { entrySpring } from '../lib/motion';
 
 export default function BackToTop() {
   const [visible, setVisible] = useState(false);
@@ -24,7 +25,7 @@ export default function BackToTop() {
           initial={{ opacity: 0, scale: 0, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0, y: 20 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+          transition={entrySpring(300)}
           onClick={scrollToTop}
           style={{
             position: 'fixed',

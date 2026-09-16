@@ -47,6 +47,11 @@ export default function CursorEffects() {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     if (reducedMotion.matches) return;
 
+    // 触屏设备不启用。这个特效是按「光标落点」设计的，而手机上：
+    // 落点会被手指本身盖住看不到，却要在每次点击（点导航、点按钮、点卡片都算）
+    // 重绘整块全屏 canvas，正好和页面转场动画抢帧。
+    if (window.matchMedia('(pointer: coarse)').matches) return;
+
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let width = window.innerWidth;
     let height = window.innerHeight;

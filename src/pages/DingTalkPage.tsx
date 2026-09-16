@@ -242,7 +242,7 @@ export default function DingTalkPage() {
           <Select
             showSearch
             placeholder="搜索库存物品（错字、少字也能搜到）"
-            style={{ width: 280 }}
+            className="dingtalk-item-select"
             value={pickedId}
             onChange={(v) => pickItem(rec.id, v)}
             options={itemOptions}

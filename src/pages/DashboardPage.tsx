@@ -18,6 +18,7 @@ import {
 import { useItems } from '../hooks/useItems';
 import { useBorrowing } from '../hooks/useBorrowing';
 import { CATEGORY_LABELS, CATEGORY_COLORS, type ItemCategory } from '../types';
+import { entrySpring } from '../lib/motion';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
@@ -197,7 +198,7 @@ export default function DashboardPage() {
                     opacity: 1,
                     y: 0,
                     scale: 1,
-                    transition: { type: 'spring', stiffness: 200, damping: 20 },
+                    transition: entrySpring(200),
                   },
                 }}
               >
@@ -230,7 +231,7 @@ export default function DashboardPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={mounted ? { opacity: 1, y: 0 } : {}}
-            transition={{ delay: 0.4, type: 'spring', stiffness: 150, damping: 18 }}
+            transition={{ delay: 0.4, ...entrySpring(150) }}
           >
             <Card title="物品分类占比" style={{ borderRadius: 12 }}>
               <ResponsiveContainer width="100%" height={240}>
@@ -268,7 +269,7 @@ export default function DashboardPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={mounted ? { opacity: 1, y: 0 } : {}}
-            transition={{ delay: 0.5, type: 'spring', stiffness: 150, damping: 18 }}
+            transition={{ delay: 0.5, ...entrySpring(150) }}
           >
             <Card title="近6月借用趋势" style={{ borderRadius: 12 }}>
               <ResponsiveContainer width="100%" height={240}>
@@ -289,7 +290,7 @@ export default function DashboardPage() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={mounted ? { opacity: 1, y: 0 } : {}}
-        transition={{ delay: 0.6, type: 'spring', stiffness: 150, damping: 18 }}
+        transition={{ delay: 0.6, ...entrySpring(150) }}
       >
         <Card
           title={<span><FireOutlined style={{ color: '#F59E0B', marginRight: 8 }} />热门借用物品 Top 5</span>}
@@ -303,7 +304,7 @@ export default function DashboardPage() {
                 key={item.name}
                 initial={{ opacity: 0, x: -12 }}
                 animate={mounted ? { opacity: 1, x: 0 } : {}}
-                transition={{ delay: 0.7 + idx * 0.08, type: 'spring', stiffness: 200, damping: 18 }}
+                transition={{ delay: 0.7 + idx * 0.08, ...entrySpring(200) }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

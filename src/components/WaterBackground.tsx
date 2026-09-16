@@ -26,11 +26,20 @@ const COLORS_RGB: [number, number, number][] = [
 
 const DENSITY_MAP: Record<Density, number> = { off: 0, min: 25, medium: 55, max: 80 };
 
+/**
+ * 手机端在传入档位基础上再降几档。
+ *
+ * 这个 canvas 挂在 Layout 上，是**常驻的 rAF 循环**，粒子数直接决定每秒
+ * 的绘制开销。触屏设备的 CPU/GPU 预算本就比桌面紧，而降的是背景纹样
+ * （baseOpacity 只有 0.08），少几十个粒子几乎看不出来。
+ */
+const MOBILE_DENSITY_DROP = 2;
+
 function getDensity(raw: Density, isMobile: boolean): number {
   if (raw === 'off') return 0;
   const levels: Density[] = ['min', 'medium', 'max'];
   const idx = levels.indexOf(raw);
-  const mobileIdx = isMobile ? Math.max(0, idx - 1) : idx;
+  const mobileIdx = isMobile ? Math.max(0, idx - MOBILE_DENSITY_DROP) : idx;
   return DENSITY_MAP[levels[mobileIdx]];
 }
 

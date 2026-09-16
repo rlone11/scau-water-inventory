@@ -214,13 +214,18 @@ export default function MainLayout() {
               className="mobile-menu-btn"
             />
             <div className="header-logo">
+              {/* width/height 是给浏览器提前占位的（对应标清图 512×134），
+                  实际显示尺寸由 .header-logo-img 的 CSS 控制。
+                  少了这两个属性，图片要等解码完才占位置，首屏会抖一下。 */}
               <img
-                src={`${import.meta.env.BASE_URL}images/矢量四川农业大学校徽_副本.png`}
+                src={`${import.meta.env.BASE_URL}images/矢量四川农业大学校徽_标清.png`}
                 alt="四川农业大学"
-                style={{ height: 32, filter: 'brightness(0) invert(1)' }}
+                className="header-logo-img"
+                width={512}
+                height={134}
               />
-              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.3)', height: 28, margin: '0 4px' }} />
-              <div>
+              <div className="header-divider" />
+              <div className="header-logo-text">
                 <div className="header-title">水利水电学院</div>
                 <div className="header-subtitle">物品统计管理系统</div>
               </div>
@@ -299,6 +304,11 @@ export default function MainLayout() {
           .ant-layout-sider { display: none !important; }
           .ant-layout { margin-left: 0 !important; }
           .mobile-menu-btn { display: inline-flex !important; }
+        }
+        @media (max-width: 768px) {
+          /* 顶栏和正文两侧各留 24px，在 375px 屏上要吃掉 96px，收窄一半 */
+          .ant-layout-header { padding: 0 12px !important; }
+          .ant-layout-content { padding: 12px !important; }
         }
       `}</style>
     </AntLayout>
