@@ -166,6 +166,9 @@ export default function LoginPage() {
             style={{
               width: 80,
               height: 80,
+              // border-box 让 80px 是**含内边距**的总尺寸（内部的院徽 64px）。
+              // 入场动画里那个飞行徽章用的是同一套规则，落位才能严丝合缝
+              boxSizing: 'border-box',
               borderRadius: '50%',
               background: '#ffffff',
               display: 'flex',

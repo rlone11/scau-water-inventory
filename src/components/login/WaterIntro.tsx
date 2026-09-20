@@ -247,6 +247,15 @@ function makeBadgeUpdater(el: HTMLElement) {
     el.style.top = `${box.top}px`;
     el.style.width = `${box.w}px`;
     el.style.height = `${box.h}px`;
+    /**
+     * ⚠️ 内边距必须算成 px，**不能用百分比**。
+     *
+     * CSS 的百分比 padding 是相对**包含块的宽度**算的，不是元素自身宽度。
+     * 这个徽章在固定全屏的覆盖层里，所以 `padding: 10%` 在 1200px 宽的屏上
+     * 是 120px 而不是 38px —— 院徽被挤成一小坨，跟登录页那个完全对不上。
+     * 10% 是登录页那个真徽章的固定比例（80px 外圈 / 8px 内边距）。
+     */
+    el.style.padding = `${box.w * 0.1}px`;
     el.style.opacity = String(opacity);
     el.style.filter = blur > 0.05 ? `blur(${blur.toFixed(1)}px)` : 'none';
     el.style.transform = `scale(${scale})`;
@@ -465,7 +474,7 @@ export default function WaterIntro({ onDone }: Props) {
           background: '#ffffff',
           borderRadius: '50%',
           boxSizing: 'border-box',
-          padding: '10%',
+          // 具体的 padding 由 makeBadgeUpdater 按尺寸算（见那里的说明）
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
