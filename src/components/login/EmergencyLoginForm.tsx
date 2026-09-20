@@ -41,11 +41,12 @@ export default function EmergencyLoginForm({ onLoggedIn }: Props) {
 
   return (
     <div>
+      {/* 深色文字 —— 这是在白卡片里，不是深色背景上 */}
       <Text
         style={{
           display: 'block',
           textAlign: 'center',
-          color: 'rgba(255,255,255,0.65)',
+          color: '#64748B',
           fontSize: 13,
           marginBottom: 16,
         }}

@@ -223,18 +223,23 @@ export default function DingTalkQrLogin({ onLoggedIn }: Props) {
       </div>
 
       <div style={{ marginTop: 12, minHeight: 44 }}>
+        {/*
+          ⚠️ 这里是**白卡片**，文字必须用深色。
+          之前写成 rgba(255,255,255,…) 是在深色背景上才成立的写法，
+          搬到卡片里就成了白底白字，完全看不见。
+        */}
         {phase === 'exchanging' && (
-          <Text style={{ color: 'rgba(255,255,255,0.85)' }}>
+          <Text style={{ color: '#0369A1' }}>
             <Spin size="small" /> 正在验证身份…
           </Text>
         )}
 
         {phase === 'ready' && (
-          <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
-            请用<strong style={{ color: '#fff' }}>学院钉钉</strong>扫码登录
+          <Text style={{ color: '#475569', fontSize: 13 }}>
+            请用<strong style={{ color: '#0C4A6E' }}>学院钉钉</strong>扫码登录
             <br />
-            <span style={{ fontSize: 12 }}>
-              仅限本院钉钉组织成员，外部人员请用左侧「我来借东西」
+            <span style={{ fontSize: 12, color: '#94A3B8' }}>
+              仅限本院钉钉组织成员，外部人员请用「我来借东西」
             </span>
           </Text>
         )}

@@ -18,18 +18,24 @@ const BASE = import.meta.env.BASE_URL;
 const INTRO_KEY = 'scau_intro_played';
 
 /**
- * 漂浮水滴。
+ * 漂浮的吉祥物。
  *
- * ⚠️ 全部用 `_标清` 版本。原图动辄 640KB（男水滴 1079x1103），
- * 而这里最大只显示 80px —— 四个装饰图加起来原来要下 1.3MB，
- * 在国内访问 GitHub Pages 的场景下是纯粹白等的开销。
+ * ⚠️ 用 `_透明` 版本，而且**不要再加 filter**。
+ *
+ * 这三张图原本是画在白底上的卡通吉祥物（两个京剧扮相 + 一个普通小水滴），
+ * **不透明**。以前这里写着 `filter: brightness(0) invert(1)` 想做成"白色剪影"，
+ * 但图本身不透明 → 整个矩形被刷成纯白，页面上就是几个飘着的白方块。
+ * 已经用泛洪抠掉白底（只抠与边缘连通的部分，吉祥物身上的白不受影响），
+ * 现在原色显示。
+ *
+ * 尺寸仍用缩略版：原图男水滴有 1079x1103 / 641KB，而这里只显示 70px。
  */
 const floatingDrops = [
-  { src: 'images/小水滴2_标清.png', size: 80, left: '5%', top: '10%', delay: 0, duration: 6 },
-  { src: 'images/小水滴3_标清.png', size: 60, left: '85%', top: '15%', delay: 1.5, duration: 7 },
-  { src: 'images/男水滴_标清.png', size: 70, left: '10%', top: '70%', delay: 0.8, duration: 8 },
-  { src: 'images/小水滴2_标清.png', size: 55, left: '75%', top: '75%', delay: 2.5, duration: 6.5 },
-  { src: 'images/小水滴3_标清.png', size: 50, left: '50%', top: '85%', delay: 3, duration: 7.5 },
+  { src: 'images/小水滴2_透明.png', size: 80, left: '5%', top: '10%', delay: 0, duration: 6 },
+  { src: 'images/小水滴3_透明.png', size: 60, left: '85%', top: '15%', delay: 1.5, duration: 7 },
+  { src: 'images/男水滴_透明.png', size: 70, left: '10%', top: '70%', delay: 0.8, duration: 8 },
+  { src: 'images/小水滴2_透明.png', size: 55, left: '75%', top: '75%', delay: 2.5, duration: 6.5 },
+  { src: 'images/小水滴3_透明.png', size: 50, left: '50%', top: '85%', delay: 3, duration: 7.5 },
 ];
 
 /**
@@ -104,7 +110,7 @@ export default function LoginPage() {
               left: drop.left,
               top: drop.top,
               opacity: 0,
-              filter: 'brightness(0) invert(1)',
+              objectFit: 'contain',
             }}
             animate={{
               opacity: [0, 0.12, 0.18, 0.12, 0],
@@ -192,7 +198,7 @@ export default function LoginPage() {
           <Title level={2} style={{ color: '#fff', margin: 0, fontWeight: 700, letterSpacing: 2 }}>
             水利水电学院
           </Title>
-          <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>物品管理系统</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.78)', fontSize: 14 }}>物品管理系统</Text>
         </div>
 
         <Card
@@ -223,14 +229,15 @@ export default function LoginPage() {
 
         <div style={{ textAlign: 'center', marginTop: 16 }}>
           {mode === 'emergency' ? (
-            <Button type="link" onClick={() => setMode('dingtalk')} style={{ color: 'rgba(255,255,255,0.6)' }}>
+            <Button type="link" onClick={() => setMode('dingtalk')} style={{ color: 'rgba(255,255,255,0.85)' }}>
               返回钉钉登录
             </Button>
           ) : (
+            /* 0.35 的实际观感几乎看不见 —— 底色是中等蓝，白字得够亮才读得出来 */
             <Button
               type="link"
               onClick={() => setMode('emergency')}
-              style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}
+              style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12 }}
             >
               钉钉无法登录？应急入口
             </Button>

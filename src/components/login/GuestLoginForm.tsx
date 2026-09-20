@@ -28,7 +28,8 @@ export default function GuestLoginForm({ onLoggedIn }: Props) {
 
   return (
     <div>
-      <Text style={{ display: 'block', textAlign: 'center', color: 'rgba(255,255,255,0.65)', fontSize: 13, marginBottom: 16 }}>
+      {/* 深色文字 —— 这是在白卡片里，不是深色背景上 */}
+      <Text style={{ display: 'block', textAlign: 'center', color: '#64748B', fontSize: 13, marginBottom: 16 }}>
         访客无需账号，填个联系方式即可查看库存并借用
       </Text>
 
