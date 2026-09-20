@@ -46,16 +46,25 @@ const SAMPLE_W_MOBILE = 70;
 /** 透明度高于这个值才算院徽本体，滤掉抗锯齿的毛边 */
 const ALPHA_CUTOFF = 120;
 
-const CONVERGE_MS = 1200;
-const RESOLVE_MS = 850;
-const FLY_MS = 850;
+const CONVERGE_MS = 1600;
+const RESOLVE_MS = 1200;
+const FLY_MS = 1000;
 const TOTAL_MS = CONVERGE_MS + RESOLVE_MS + FLY_MS;
 
 /** 覆盖层淡出、与底下登录页交叉的时间 */
-const HANDOFF_MS = 320;
+const HANDOFF_MS = 420;
 
-/** "显影"之前的最大模糊半径 */
-const MAX_BLUR = 12;
+/** 白圆漫过水滴之后，水滴退场用的过渡带宽（像素）—— 免得边缘像刀切 */
+const FLOOD_EDGE = 26;
+
+/**
+ * 显影阶段院徽的最大模糊半径。
+ *
+ * ⚠️ 这个模糊**只加在里面那张院徽图上，不加在白圆底上**。
+ * 加在白圆上的话，圆形裁切出来的那道水线会被一起糊掉，
+ * 变成一大圈灰糊糊的边 —— 白圆漫开的效果就废了。
+ */
+const MAX_BLUR = 10;
 
 /**
  * 白圆底的内边距，占徽章直径的比例。
@@ -197,19 +206,28 @@ function buildParticles(
   return { particles, layout };
 }
 
-/** 画水滴。清晰化阶段结束后就不画了，交给真正的院徽图 */
+/** 画水滴。白圆漫完就不画了，交给真正的院徽图 */
 function drawDots(
   ctx: CanvasRenderingContext2D,
   particles: Particle[],
   t: number,
   W: number,
   H: number,
+  cx: number,
+  cy: number,
+  discR: number,
 ): void {
   ctx.clearRect(0, 0, W, H);
   if (t >= CONVERGE_MS + RESOLVE_MS) return;
 
-  // 显影期间水滴整体淡出，把画面让给清晰的院徽
-  const fade = t <= CONVERGE_MS ? 1 : 1 - (t - CONVERGE_MS) / RESOLVE_MS;
+  /**
+   * ⚠️ 水滴**不做整体淡出**，而是「被白圆漫过的才退场」。
+   *
+   * 整体淡出的话，外圈会在白圆还没漫到时就先空掉一块 ——
+   * 看着像院徽缺了个角。按距离逐个判断，画面就永远是完整的：
+   * 外面还是白色水滴，里面已经是黑院徽，边界就是那道白圆的边。
+   */
+  const flooding = t > CONVERGE_MS;
 
   for (const p of particles) {
     const localT = t - p.delay;
@@ -230,7 +248,15 @@ function drawDots(
       alpha = 0.92;
     }
 
-    alpha *= fade;
+    if (flooding) {
+      const d = Math.hypot(x - cx, y - cy);
+      const covered = Math.min(
+        1,
+        Math.max(0, (discR - d) / (2 * FLOOD_EDGE) + 0.5),
+      );
+      alpha *= 1 - covered;
+    }
+
     if (alpha <= 0.01) continue;
 
     const bucket = Math.min(
@@ -249,17 +275,23 @@ function drawDots(
  * 每帧都写 style 会不断触发布局计算，所以量化后比对 —— 值没实质变化
  * 就整个跳过。
  */
-function makeBadgeUpdater(el: HTMLElement) {
+function makeBadgeUpdater(el: HTMLElement, img: HTMLElement) {
   let lastKey = '';
   return (
     box: Layout,
     opacity: number,
     blur: number,
     scale: number,
+    /**
+     * 白圆的裁切半径，**按元素自身的百分比**（0~50）。
+     * 用百分比而不是 px，是因为飞行阶段元素会从 380px 缩到 80px ——
+     * 写成 px 的话缩小之后白圆就只剩中间一小块了。
+     */
+    clipPercent: number,
   ): void => {
     const key = `${box.left | 0}|${box.top | 0}|${box.w | 0}|${
       box.h | 0
-    }|${(opacity * 40) | 0}|${blur.toFixed(1)}|${scale.toFixed(3)}`;
+    }|${(opacity * 40) | 0}|${blur.toFixed(1)}|${scale.toFixed(3)}|${clipPercent.toFixed(1)}`;
     if (key === lastKey) return;
     lastKey = key;
 
@@ -277,8 +309,11 @@ function makeBadgeUpdater(el: HTMLElement) {
      */
     el.style.padding = `${box.w * BADGE_PADDING_RATIO}px`;
     el.style.opacity = String(opacity);
-    el.style.filter = blur > 0.05 ? `blur(${blur.toFixed(1)}px)` : 'none';
     el.style.transform = `scale(${scale})`;
+    // 白圆从中心往外漫
+    el.style.clipPath = `circle(${clipPercent.toFixed(1)}% at 50% 50%)`;
+    // 模糊挂在里面的图上，不挂白圆 —— 否则水线会被糊掉
+    img.style.filter = blur > 0.05 ? `blur(${blur.toFixed(1)}px)` : 'none';
   };
 }
 
@@ -291,6 +326,7 @@ export default function WaterIntro({ onDone }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const badgeRef = useRef<HTMLDivElement>(null);
+  const badgeImgRef = useRef<HTMLImageElement>(null);
   /** 用 ref 存回调，避免父组件每次重渲染都重启动画 */
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
@@ -299,7 +335,8 @@ export default function WaterIntro({ onDone }: Props) {
     const wrap = wrapRef.current;
     const canvas = canvasRef.current;
     const badge = badgeRef.current;
-    if (!wrap || !canvas || !badge) {
+    const badgeImg = badgeImgRef.current;
+    if (!wrap || !canvas || !badge || !badgeImg) {
       onDoneRef.current();
       return;
     }
@@ -353,7 +390,7 @@ export default function WaterIntro({ onDone }: Props) {
     resize();
     window.addEventListener('resize', resize);
 
-    const updateImage = makeBadgeUpdater(badge);
+    const updateImage = makeBadgeUpdater(badge, badgeImg);
     let particles: Particle[] = [];
     let layout: Layout = { left: 0, top: 0, w: 0, h: 0 };
     /**
@@ -374,22 +411,43 @@ export default function WaterIntro({ onDone }: Props) {
       if (cancelled) return;
       const t = now - start;
 
-      drawDots(ctx, particles, t, W, H);
+      /**
+       * 白圆当前半径。
+       *
+       * 显影阶段的整个观感都靠这一条：白圆从中心往外漫，漫过的地方
+       * 黑院徽显形、水滴退场。深蓝底上的白色水滴和黑院徽本来是两种颜色，
+       * 硬切会「跳」一下；用「水漫过去」这个动作把颜色变化解释掉，
+       * 就成了一个连贯的过程。
+       */
+      const floodK =
+        t <= CONVERGE_MS
+          ? 0
+          : easeInOutCubic(Math.min(1, (t - CONVERGE_MS) / RESOLVE_MS));
+      const discR = floodK * (layout.w / 2);
+
+      drawDots(
+        ctx,
+        particles,
+        t,
+        W,
+        H,
+        layout.left + layout.w / 2,
+        layout.top + layout.h / 2,
+        discR,
+      );
 
       if (t < CONVERGE_MS) {
-        // 还没显影
-        updateImage(layout, 0, MAX_BLUR, 1.05);
+        // 还没开始漫
+        updateImage(layout, 0, MAX_BLUR, 1.04, 0);
       } else if (t < CONVERGE_MS + RESOLVE_MS) {
-        /**
-         * 显影：白色徽章浮出来、模糊退去。
-         *
-         * 透明度比模糊晚一步跟上（前 30% 完全不显）—— 水滴此刻正在淡出，
-         * 徽章要是同时淡入，两者叠在同一片区域，谁都看不清。
-         * 先让水滴退，徽章再显。
-         */
-        const p = (t - CONVERGE_MS) / RESOLVE_MS;
-        const shape = easeOutCubic(Math.min(1, Math.max(0, (p - 0.3) / 0.7)));
-        updateImage(layout, shape, MAX_BLUR * (1 - shape), 1.05 - 0.05 * shape);
+        // 白圆一边长大，院徽一边从模糊变清晰
+        updateImage(
+          layout,
+          1,
+          MAX_BLUR * (1 - floodK),
+          1.04 - 0.04 * floodK,
+          floodK * 50,
+        );
       } else {
         // 飞向登录页的真实位置。到这一刻登录页的入场动画早已结束，
         // 量到的才是最终坐标
@@ -416,6 +474,7 @@ export default function WaterIntro({ onDone }: Props) {
           1,
           0,
           1,
+          50, // 白圆已经漫满，飞行途中保持满圆（百分比，会跟着元素缩放）
         );
       }
 
@@ -443,7 +502,7 @@ export default function WaterIntro({ onDone }: Props) {
           return;
         }
 
-        updateImage(layout, 0, MAX_BLUR, 1.05);
+        updateImage(layout, 0, MAX_BLUR, 1.04, 0);
         raf = requestAnimationFrame(frame);
       } catch {
         // 图加载失败、canvas 被污染……任何异常都不能把人挡在登录页外
@@ -505,9 +564,16 @@ export default function WaterIntro({ onDone }: Props) {
         }}
       >
         <img
+          ref={badgeImgRef}
           src={EMBLEM_SRC}
           alt=""
-          style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain',
+            display: 'block',
+            willChange: 'filter',
+          }}
         />
       </div>
     </div>
