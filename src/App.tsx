@@ -6,6 +6,7 @@ import theme from './theme';
 import { AuthProvider } from './contexts/AuthContext';
 import MainLayout from './components/Layout';
 import RouteGuard, { AdminOnly } from './components/RouteGuard';
+import ErrorBoundary from './components/ErrorBoundary';
 import CursorEffects from './components/CursorEffects';
 import LoginPage from './pages/LoginPage';
 
@@ -29,6 +30,7 @@ function App() {
   return (
     <ConfigProvider theme={theme} locale={zhCN}>
       <AntApp>
+        <ErrorBoundary>
         <AuthProvider>
           <CursorEffects />
           <Suspense fallback={<Loading />}>
@@ -58,6 +60,7 @@ function App() {
             </Routes>
           </Suspense>
         </AuthProvider>
+        </ErrorBoundary>
       </AntApp>
     </ConfigProvider>
   );

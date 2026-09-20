@@ -184,22 +184,42 @@ export default function DingTalkQrLogin({ onLoggedIn }: Props) {
 
   return (
     <div style={{ textAlign: 'center' }}>
-      {/* 二维码容器必须一直在 DOM 里 —— DTFrameLogin 初始化时就要能找到它 */}
-      <div
-        id={CONTAINER_ID}
-        style={{
-          width: 280,
-          height: 280,
-          margin: '0 auto',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: '#fff',
-          borderRadius: 12,
-          overflow: 'hidden',
-        }}
-      >
-        {phase === 'loading' && <Spin tip="二维码加载中…" />}
+      {/*
+        ⚠️ 这个 div 整块让给钉钉 SDK，React 绝不往里面放子节点。
+
+        钉钉初始化时会清空容器再塞自己的 iframe。如果里面原本有 React 管理的
+        节点，那个节点会被从 DOM 里抹掉；之后 React 按自己的账本去删它，就会抛
+        NotFoundError（Failed to execute 'removeChild'），整棵树跟着卸载 ——
+        用户看到的就是「闪一下然后白屏」。
+
+        加载圈改成绝对定位的兄弟节点盖在上面，不碰这个容器。
+      */}
+      <div style={{ position: 'relative', width: 280, height: 280, margin: '0 auto' }}>
+        <div
+          id={CONTAINER_ID}
+          style={{
+            width: '100%',
+            height: '100%',
+            background: '#fff',
+            borderRadius: 12,
+            overflow: 'hidden',
+          }}
+        />
+        {phase === 'loading' && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#fff',
+              borderRadius: 12,
+            }}
+          >
+            <Spin />
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: 12, minHeight: 44 }}>
