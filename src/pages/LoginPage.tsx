@@ -31,11 +31,11 @@ const INTRO_KEY = 'scau_intro_played';
  * 尺寸仍用缩略版：原图男水滴有 1079x1103 / 641KB，而这里只显示 70px。
  */
 const floatingDrops = [
-  { src: 'images/小水滴2_透明.png', size: 80, left: '5%', top: '10%', delay: 0, duration: 6 },
-  { src: 'images/小水滴3_透明.png', size: 60, left: '85%', top: '15%', delay: 1.5, duration: 7 },
-  { src: 'images/男水滴_透明.png', size: 70, left: '10%', top: '70%', delay: 0.8, duration: 8 },
-  { src: 'images/小水滴2_透明.png', size: 55, left: '75%', top: '75%', delay: 2.5, duration: 6.5 },
-  { src: 'images/小水滴3_透明.png', size: 50, left: '50%', top: '85%', delay: 3, duration: 7.5 },
+  { src: 'images/小水滴2_透明.png', size: 96, left: '4%', top: '9%', delay: 0, duration: 6 },
+  { src: 'images/小水滴3_透明.png', size: 74, left: '86%', top: '14%', delay: 1.5, duration: 7 },
+  { src: 'images/男水滴_透明.png', size: 86, left: '9%', top: '68%', delay: 0.8, duration: 8 },
+  { src: 'images/小水滴2_透明.png', size: 66, left: '76%', top: '74%', delay: 2.5, duration: 6.5 },
+  { src: 'images/小水滴3_透明.png', size: 60, left: '50%', top: '84%', delay: 3, duration: 7.5 },
 ];
 
 /**
@@ -113,7 +113,8 @@ export default function LoginPage() {
               objectFit: 'contain',
             }}
             animate={{
-              opacity: [0, 0.12, 0.18, 0.12, 0],
+              // 换成彩色插画后 0.18 太淡了，几乎看不出是什么 —— 调到能看见
+              opacity: [0, 0.3, 0.44, 0.3, 0],
               y: [0, -30, 0, -20, 0],
               rotate: [0, 5, 0, -5, 0],
             }}
@@ -203,14 +204,29 @@ export default function LoginPage() {
 
         <Card
           style={{
-            borderRadius: 16,
-            background: 'rgba(255,255,255,0.95)',
-            backdropFilter: 'blur(20px)',
-            border: 'none',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+            position: 'relative',
+            borderRadius: 18,
+            overflow: 'hidden',
+            // 微渐变 + 浅色描边 + 外投影 + 顶部内高光。
+            // 一块纯白看着就是"一张纸"，这四样加上去才有厚度。
+            background: 'linear-gradient(180deg, #FFFFFF 0%, #F4FAFE 100%)',
+            border: '1px solid rgba(14,165,233,0.16)',
+            boxShadow:
+              '0 16px 40px rgba(3,105,161,0.22), 0 2px 8px rgba(3,105,161,0.10), inset 0 1px 0 rgba(255,255,255,0.9)',
           }}
           styles={{ body: { padding: 20 } }}
         >
+          {/* 顶部一道水色装饰条 —— 把卡片和背景连起来 */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 3,
+              background: 'linear-gradient(90deg, #7DD3FC, #0EA5E9, #0284C7)',
+            }}
+          />
           <Segmented
             block
             value={mode === 'emergency' ? 'dingtalk' : mode}

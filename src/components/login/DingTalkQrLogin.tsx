@@ -201,7 +201,11 @@ export default function DingTalkQrLogin({ onLoggedIn }: Props) {
             width: '100%',
             height: '100%',
             background: '#fff',
-            borderRadius: 12,
+            borderRadius: 14,
+            // 加圈描边和浅投影，让二维码成为一块有边界的"面板"。
+            // 之前它和卡片都是白的，边界看不见，整块显得空
+            border: '1px solid rgba(14,165,233,0.18)',
+            boxShadow: '0 2px 10px rgba(3,105,161,0.07)',
             overflow: 'hidden',
           }}
         />
@@ -222,7 +226,16 @@ export default function DingTalkQrLogin({ onLoggedIn }: Props) {
         )}
       </div>
 
-      <div style={{ marginTop: 12, minHeight: 44 }}>
+      <div style={{ marginTop: 14, minHeight: 44 }}>
+        {/* 中间留白太大时就一条细分割线，两端渐隐 —— 比空着好，也不抢戏 */}
+        <div
+          style={{
+            height: 1,
+            marginBottom: 12,
+            background:
+              'linear-gradient(90deg, transparent, rgba(14,165,233,0.28), transparent)',
+          }}
+        />
         {/*
           ⚠️ 这里是**白卡片**，文字必须用深色。
           之前写成 rgba(255,255,255,…) 是在深色背景上才成立的写法，

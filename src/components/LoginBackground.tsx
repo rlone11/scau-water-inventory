@@ -115,21 +115,23 @@ export default function LoginBackground() {
       ctx.fillStyle = 'rgba(3,105,161,0.12)';
       ctx.fillRect(0, 0, width, height);
 
-      // Light beam (draw once per frame, cheap)
+      // 顶部柔光。
+      //
+      // ⚠️ 以前这里画的是一个白色**多边形**当初光柱。问题是画布每帧只做淡化、
+      // 不清空，多边形的硬边会一帧帧积累下来 —— 最后页面上就是一条从左上斜切
+      // 到右下的硬直线，看着像渲染故障而不像光。
+      //
+      // 换成径向渐变：软边是渐变本身的性质，再怎么叠加也不会出现直线边界。
       if (!isMobile) {
-        const beamOpacity = 0.03 + 0.02 * Math.sin(timeRef.current * 0.3);
-        ctx.beginPath();
-        ctx.moveTo(width, 0);
-        ctx.lineTo(width * 0.4, 0);
-        ctx.lineTo(0, height * 0.6);
-        ctx.lineTo(width, height * 0.9);
-        ctx.closePath();
-        const beamGrad = ctx.createLinearGradient(width, 0, width * 0.2, height);
-        beamGrad.addColorStop(0, `rgba(255,255,255,${beamOpacity * 2})`);
-        beamGrad.addColorStop(0.5, `rgba(255,255,255,${beamOpacity})`);
-        beamGrad.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = beamGrad;
-        ctx.fill();
+        const glow = 0.05 + 0.02 * Math.sin(timeRef.current * 0.3);
+        const cxr = width * 0.62;
+        const cyr = -height * 0.15;
+        const grad = ctx.createRadialGradient(cxr, cyr, 0, cxr, cyr, height * 1.25);
+        grad.addColorStop(0, `rgba(255,255,255,${glow})`);
+        grad.addColorStop(0.55, `rgba(255,255,255,${glow * 0.35})`);
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, width, height);
       }
 
       for (const b of bubbles) {
