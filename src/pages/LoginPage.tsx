@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Card, Button, Segmented, Typography } from 'antd';
 import { useAuth } from '../contexts/AuthContext';
 import LoginBackground from '../components/LoginBackground';
+import WaterIntro from '../components/login/WaterIntro';
 import DingTalkQrLogin from '../components/login/DingTalkQrLogin';
 import GuestLoginForm from '../components/login/GuestLoginForm';
 import EmergencyLoginForm from '../components/login/EmergencyLoginForm';
@@ -12,12 +13,22 @@ const { Title, Text } = Typography;
 
 const BASE = import.meta.env.BASE_URL;
 
+/** 入场动画同一个标签页只播一次。关掉标签页重开才会再看到。 */
+const INTRO_KEY = 'scau_intro_played';
+
+/**
+ * 漂浮水滴。
+ *
+ * ⚠️ 全部用 `_标清` 版本。原图动辄 640KB（男水滴 1079x1103），
+ * 而这里最大只显示 80px —— 四个装饰图加起来原来要下 1.3MB，
+ * 在国内访问 GitHub Pages 的场景下是纯粹白等的开销。
+ */
 const floatingDrops = [
-  { src: 'images/小水滴 (2).png', size: 80, left: '5%', top: '10%', delay: 0, duration: 6 },
-  { src: 'images/小水滴 (3).png', size: 60, left: '85%', top: '15%', delay: 1.5, duration: 7 },
-  { src: 'images/男水滴.png', size: 70, left: '10%', top: '70%', delay: 0.8, duration: 8 },
-  { src: 'images/小水滴 (2).png', size: 55, left: '75%', top: '75%', delay: 2.5, duration: 6.5 },
-  { src: 'images/小水滴 (3).png', size: 50, left: '50%', top: '85%', delay: 3, duration: 7.5 },
+  { src: 'images/小水滴2_标清.png', size: 80, left: '5%', top: '10%', delay: 0, duration: 6 },
+  { src: 'images/小水滴3_标清.png', size: 60, left: '85%', top: '15%', delay: 1.5, duration: 7 },
+  { src: 'images/男水滴_标清.png', size: 70, left: '10%', top: '70%', delay: 0.8, duration: 8 },
+  { src: 'images/小水滴2_标清.png', size: 55, left: '75%', top: '75%', delay: 2.5, duration: 6.5 },
+  { src: 'images/小水滴3_标清.png', size: 50, left: '50%', top: '85%', delay: 3, duration: 7.5 },
 ];
 
 /**
@@ -37,26 +48,31 @@ export default function LoginPage() {
   const { role, loading } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<LoginMode>('dingtalk');
-  const [inputFocused, setInputFocused] = useState(false);
-  const [inputCenter, setInputCenter] = useState<{ x: number; y: number } | null>(null);
-  const formCardRef = useRef<HTMLDivElement>(null);
+
+  // 拿不到 sessionStorage（隐私模式等）就不播动画，直接进登录页
+  const [showIntro, setShowIntro] = useState(() => {
+    try {
+      return sessionStorage.getItem(INTRO_KEY) !== '1';
+    } catch {
+      return false;
+    }
+  });
 
   const goHome = () => navigate('/', { replace: true });
+
+  const handleIntroDone = useCallback(() => {
+    try {
+      sessionStorage.setItem(INTRO_KEY, '1');
+    } catch {
+      /* 写不了就算了，顶多下次再播一遍 */
+    }
+    setShowIntro(false);
+  }, []);
 
   // 已经登录的人不该停在登录页（比如按了浏览器后退）
   useEffect(() => {
     if (!loading && role) navigate('/', { replace: true });
   }, [loading, role, navigate]);
-
-  // 焦点事件用 React 的 onFocus/onBlur 冒泡捕获，不必给每个输入框单独接线
-  const handleFocus = () => {
-    setInputFocused(true);
-    const el = formCardRef.current;
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      setInputCenter({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-    }
-  };
 
   return (
     <div
@@ -71,11 +87,7 @@ export default function LoginPage() {
         overflow: 'hidden',
       }}
     >
-      <LoginBackground
-        inputFocused={inputFocused}
-        inputCenterX={inputCenter?.x ?? null}
-        inputCenterY={inputCenter?.y ?? null}
-      />
+      <LoginBackground />
 
       {/* 漂浮的水滴 */}
       <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 2 }}>
@@ -123,33 +135,49 @@ export default function LoginPage() {
         ))}
       </div>
 
+      {/*
+        主要内容。动画播放期间整块隐形，等水滴散开再弹进来 ——
+        这里同时承担了「开场时机」和「入场动效」两件事，
+        所以不要把它拆成两个元素。
+      */}
       <motion.div
         initial={{ opacity: 0, y: 30, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
+        animate={showIntro ? { opacity: 0, y: 30, scale: 0.95 } : { opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         style={{ width: '100%', maxWidth: 400, position: 'relative', zIndex: 1 }}
       >
         {/* 院徽与标题 */}
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          {/*
+            ⚠️ 白底 + 黑色原图，跟侧边栏里的院徽保持一致。
+
+            原来这里是磨砂方框 + `brightness(0) invert(1)` 把院徽整个压成纯白，
+            细节全被抹平了。院徽本身是黑色镂空透明底，衬白色圆底才能看清
+            —— 侧边栏早就用这个办法（注释里写着「直接放深蓝上几乎看不见」），
+            登录页却用了另一套，同一个院徽两种观感。
+          */}
           <motion.div
             style={{
               width: 80,
               height: 80,
-              borderRadius: 20,
-              background: 'rgba(255,255,255,0.12)',
+              borderRadius: '50%',
+              background: '#ffffff',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               margin: '0 auto 16px',
-              backdropFilter: 'blur(10px)',
-              padding: 12,
+              padding: 8,
+              overflow: 'hidden',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.28)',
             }}
             whileHover={{ scale: 1.05 }}
           >
             <img
-              src={BASE + 'images/镂空院徽2.png'}
+              src={BASE + 'images/镂空院徽2_标清.png'}
               alt="水利水电学院"
-              style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(0) invert(1)' }}
+              width={240}
+              height={239}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
             />
           </motion.div>
           <Title level={2} style={{ color: '#fff', margin: 0, fontWeight: 700, letterSpacing: 2 }}>
@@ -158,33 +186,31 @@ export default function LoginPage() {
           <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>物品管理系统</Text>
         </div>
 
-        <div ref={formCardRef} onFocus={handleFocus} onBlur={() => setInputFocused(false)}>
-          <Card
-            style={{
-              borderRadius: 16,
-              background: 'rgba(255,255,255,0.95)',
-              backdropFilter: 'blur(20px)',
-              border: 'none',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-            }}
-            styles={{ body: { padding: 20 } }}
-          >
-            <Segmented
-              block
-              value={mode === 'emergency' ? 'dingtalk' : mode}
-              onChange={(v) => setMode(v as LoginMode)}
-              options={[
-                { label: '学院管理人员', value: 'dingtalk' },
-                { label: '我来借东西', value: 'guest' },
-              ]}
-              style={{ marginBottom: 20 }}
-            />
+        <Card
+          style={{
+            borderRadius: 16,
+            background: 'rgba(255,255,255,0.95)',
+            backdropFilter: 'blur(20px)',
+            border: 'none',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+          }}
+          styles={{ body: { padding: 20 } }}
+        >
+          <Segmented
+            block
+            value={mode === 'emergency' ? 'dingtalk' : mode}
+            onChange={(v) => setMode(v as LoginMode)}
+            options={[
+              { label: '学院管理人员', value: 'dingtalk' },
+              { label: '我来借东西', value: 'guest' },
+            ]}
+            style={{ marginBottom: 20 }}
+          />
 
-            {mode === 'dingtalk' && <DingTalkQrLogin onLoggedIn={goHome} />}
-            {mode === 'guest' && <GuestLoginForm onLoggedIn={goHome} />}
-            {mode === 'emergency' && <EmergencyLoginForm onLoggedIn={goHome} />}
-          </Card>
-        </div>
+          {mode === 'dingtalk' && <DingTalkQrLogin onLoggedIn={goHome} />}
+          {mode === 'guest' && <GuestLoginForm onLoggedIn={goHome} />}
+          {mode === 'emergency' && <EmergencyLoginForm onLoggedIn={goHome} />}
+        </Card>
 
         <div style={{ textAlign: 'center', marginTop: 16 }}>
           {mode === 'emergency' ? (
@@ -202,6 +228,12 @@ export default function LoginPage() {
           )}
         </div>
       </motion.div>
+
+      {/*
+        入场动画盖在最上层。它自己会在结束时摘掉自己 ——
+        动画失败也有硬超时兜底，绝不会把人挡在登录页外面。
+      */}
+      {showIntro && <WaterIntro onDone={handleIntroDone} />}
     </div>
   );
 }

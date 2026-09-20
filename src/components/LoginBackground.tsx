@@ -1,5 +1,10 @@
 import { useEffect, useRef } from 'react';
 
+/** 指针推开气泡的作用半径（像素） */
+const REPEL_RADIUS = 170;
+/** 推力上限（每帧位移）。太大气泡会像被弹弓打飞 */
+const REPEL_STRENGTH = 2.0;
+
 interface Bubble {
   x: number;
   y: number;
@@ -10,31 +15,44 @@ interface Bubble {
   wanderSpeed: number;
 }
 
-interface LoginBackgroundProps {
-  inputFocused?: boolean;
-  inputCenterX?: number | null;
-  inputCenterY?: number | null;
-}
-
-export default function LoginBackground({
-  inputFocused = false,
-  inputCenterX = null,
-  inputCenterY = null,
-}: LoginBackgroundProps) {
+/**
+ * 水下背景：上浮的气泡 + 斜射的光柱。
+ *
+ * 气泡会被指针**推开**（不是吸过去）—— 鼠标划过时像拨开水面。
+ *
+ * 2026-09-20 之前这里是「输入框获得焦点时气泡聚过来」。改成登录页之后
+ * 默认显示的是二维码视图、一个输入框都没有，聚焦事件永远不触发，
+ * 效果等于死了。现在直接在组件内部监听指针，不再依赖任何 props：
+ * 走 ref 不走 React state，否则鼠标每动一下都要重渲染一次整棵登录页。
+ */
+export default function LoginBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bubblesRef = useRef<Bubble[]>([]);
   const rafRef = useRef<number>(0);
-  const focusedRef = useRef(inputFocused);
-  const targetRef = useRef({ x: 0, y: 0 });
+  /** 指针位置。指针移出窗口时为 null */
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const lastFrameRef = useRef(0);
   const timeRef = useRef(0);
-  focusedRef.current = inputFocused;
 
   useEffect(() => {
-    if (inputCenterX != null && inputCenterY != null) {
-      targetRef.current = { x: inputCenterX, y: inputCenterY };
-    }
-  }, [inputCenterX, inputCenterY]);
+    const onMove = (e: PointerEvent) => {
+      pointerRef.current = { x: e.clientX, y: e.clientY };
+    };
+    // 指针离开窗口后气泡不再受力，自然会重新散开
+    const onLeave = () => {
+      pointerRef.current = null;
+    };
+
+    window.addEventListener('pointermove', onMove, { passive: true });
+    window.addEventListener('pointerleave', onLeave);
+    document.addEventListener('pointerleave', onLeave);
+
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerleave', onLeave);
+      document.removeEventListener('pointerleave', onLeave);
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -119,14 +137,15 @@ export default function LoginBackground({
         b.wanderAngle += b.wanderSpeed;
         b.x += Math.sin(b.wanderAngle + timeRef.current * 0.3) * 0.5;
 
-        if (focusedRef.current) {
-          const tx = targetRef.current.x;
-          const ty = targetRef.current.y;
-          const dx = tx - b.x;
-          const dy = ty - b.y;
+        // 指针推开气泡。dx/dy 取「气泡 → 指针」的反方向，所以是排斥不是吸引；
+        // 越近推力越大，但留一个上限，免得贴脸时气泡瞬间被弹飞出屏。
+        const p = pointerRef.current;
+        if (p) {
+          const dx = b.x - p.x;
+          const dy = b.y - p.y;
           const dist = Math.hypot(dx, dy);
-          if (dist < 300 && dist > 0.5) {
-            const force = ((300 - dist) / 300) * 0.3;
+          if (dist < REPEL_RADIUS && dist > 0.5) {
+            const force = ((REPEL_RADIUS - dist) / REPEL_RADIUS) * REPEL_STRENGTH;
             b.x += (dx / dist) * force;
             b.y += (dy / dist) * force;
           }
