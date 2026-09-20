@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Card, Button, Segmented, Typography } from 'antd';
 import { useAuth } from '../contexts/AuthContext';
+import { LOGIN_GRADIENT, LOGIN_EMBLEM_ID } from '../theme';
 import LoginBackground from '../components/LoginBackground';
 import WaterIntro from '../components/login/WaterIntro';
 import DingTalkQrLogin from '../components/login/DingTalkQrLogin';
@@ -81,7 +82,7 @@ export default function LoginPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #0369A1 0%, #0C4A6E 50%, #075985 100%)',
+        background: LOGIN_GRADIENT,
         padding: 16,
         position: 'relative',
         overflow: 'hidden',
@@ -136,13 +137,15 @@ export default function LoginPage() {
       </div>
 
       {/*
-        主要内容。动画播放期间整块隐形，等水滴散开再弹进来 ——
-        这里同时承担了「开场时机」和「入场动效」两件事，
-        所以不要把它拆成两个元素。
+        主要内容。
+        入场动画期间它一直正常渲染着 —— 动画覆盖层是不透明的，本来就盖住了
+        这里，不需要这边配合隐藏。让它在动画一开始就处于**最终位置**很重要：
+        覆盖层要量出顶部院徽的坐标当飞行终点，量的时候这上面的入场动画
+        （600ms）早已结束，y 和 scale 都已归位。
       */}
       <motion.div
         initial={{ opacity: 0, y: 30, scale: 0.95 }}
-        animate={showIntro ? { opacity: 0, y: 30, scale: 0.95 } : { opacity: 1, y: 0, scale: 1 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         style={{ width: '100%', maxWidth: 400, position: 'relative', zIndex: 1 }}
       >
@@ -156,7 +159,10 @@ export default function LoginPage() {
             —— 侧边栏早就用这个办法（注释里写着「直接放深蓝上几乎看不见」），
             登录页却用了另一套，同一个院徽两种观感。
           */}
+          {/* id 挂在这个白圆底上：入场动画里的徽章也是白圆底 + 10% 内边距，
+              两者尺寸和内边距比例完全一致，飞过来才能严丝合缝 */}
           <motion.div
+            id={LOGIN_EMBLEM_ID}
             style={{
               width: 80,
               height: 80,

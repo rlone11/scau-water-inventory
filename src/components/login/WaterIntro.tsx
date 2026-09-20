@@ -1,20 +1,29 @@
 import { useEffect, useRef } from 'react';
+import { LOGIN_GRADIENT, LOGIN_EMBLEM_ID } from '../../theme';
 
 /**
- * 入场动画：水滴汇聚成院徽，再散开，露出登录界面。
+ * 入场动画：水滴汇聚成院徽 → 由模糊变清晰 → 飞向登录页顶部的位置落位。
  *
- * 做法是把院徽图采样成一堆点，每个点当一个水滴的目标位置，
- * 水滴从屏幕各处飞过来拼出院徽。全部在 canvas 上画 —— 用 DOM
- * 摆几百个动画元素会把主线程压垮。
+ * 四个阶段：
+ *   0 ~ 1200ms  水滴从屏幕各处飞聚，拼出院徽轮廓
+ *   1200 ~ 2050 院徽图从模糊变锐利，水滴同时淡出（"显影"）
+ *   2050 ~ 2900 清晰的院徽缩小、飞到登录页顶部那个院徽的位置
+ *   2900 ~ 3220 整块覆盖层淡出，与底下的登录页交叉
  *
- * 性能约束（这台机器 8G 内存，且刚做完手机端优化）：
- *   - 手机上粒子数砍到约 1/3
+ * 交接为什么能无缝：覆盖层铺的是**和登录页一模一样的不透明渐变**
+ * （LOGIN_GRADIENT，两边共用一个常量），所以底下那一层不需要做任何配合 ——
+ * 院徽飞到真实位置后整块淡出即可。如果两边各写一套渐变，或者让底下那层
+ * 等信号再淡入，就得对时间，稍有偏差就是一道闪。
+ *
+ * 性能约束（8G 内存的机器，且刚做完手机端优化）：
+ *   - 手机上采样降到 70px（约 1800 粒子）
  *   - DPR 上限 2
- *   - 动画跑完**彻底停掉 RAF**，不留常驻循环
- *   - prefers-reduced-motion 直接跳过
+ *   - fillRect 替 arc（1~2px 下肉眼无区别但快数倍）
+ *   - 颜色串预生成，避免每帧几万次字符串分配
+ *   - 动画结束彻底停 RAF，不留常驻循环
  *
- * ⚠️ 有硬超时兜底。动画无论卡在哪一步，到点必须放行 ——
- * 绝不能让一个装饰动画把人挡在登录页外面。
+ * ⚠️ 有硬超时兜底。装饰动画无论卡在哪一步，到点必须放行 ——
+ * 绝不能把人挡在登录页外面。
  */
 
 const EMBLEM_SRC = `${import.meta.env.BASE_URL}images/镂空院徽2_标清.png`;
@@ -27,9 +36,9 @@ const EMBLEM_SRC = `${import.meta.env.BASE_URL}images/镂空院徽2_标清.png`;
  *   - 100px → 3504 点，字形清晰、水滴感也在 ← 就用这档
  *   - 150px → 7702 点，反而太密，一眼看穿是一颗颗孤立的点
  *
- * 关键是**点的半径要跟着缩放**（`displayW / SAMPLE_W`）：半径小于
- * 相邻两点的间距时，线条会断成一截截散斑 —— 这是第一版踩的坑。
- * 而且要**把选中的点全部取上**，不能从高分辨率里稀疏抽样。
+ * 关键是**点的半径要跟着缩放**（`显示宽 / 采样宽`）：半径小于相邻两点的
+ * 间距时，线条会断成一截截散斑 —— 这是第一版踩的坑。而且要**全取**，
+ * 不能从高分辨率里抽稀。
  */
 const SAMPLE_W_DESKTOP = 100;
 const SAMPLE_W_MOBILE = 70;
@@ -37,42 +46,45 @@ const SAMPLE_W_MOBILE = 70;
 /** 透明度高于这个值才算院徽本体，滤掉抗锯齿的毛边 */
 const ALPHA_CUTOFF = 120;
 
-const CONVERGE_MS = 900;
-const HOLD_MS = 550;
-const DISPERSE_MS = 750;
-const TOTAL_MS = CONVERGE_MS + HOLD_MS + DISPERSE_MS;
+const CONVERGE_MS = 1200;
+const RESOLVE_MS = 850;
+const FLY_MS = 850;
+const TOTAL_MS = CONVERGE_MS + RESOLVE_MS + FLY_MS;
 
-/** 兜底放行时间：动画再慢也不能超过这个点 */
-const FAILSAFE_MS = TOTAL_MS + 1800;
+/** 覆盖层淡出、与底下登录页交叉的时间 */
+const HANDOFF_MS = 320;
+
+/** "显影"之前的最大模糊半径 */
+const MAX_BLUR = 12;
+
+/** 兜底：动画再慢也不能超过这个点 */
+const FAILSAFE_MS = TOTAL_MS + HANDOFF_MS + 1500;
 
 interface Particle {
-  /** 起点（散落在屏幕上） */
   sx: number;
   sy: number;
-  /** 终点（院徽上的采样点） */
   tx: number;
   ty: number;
-  /** 粒径 */
   r: number;
-  /** 起飞延迟，做出参差感而不是齐刷刷一起动 */
   delay: number;
-  /** 散开方向（单位向量） */
-  dx: number;
-  dy: number;
-  /** 散开距离 */
-  dist: number;
-  /** 明暗/色相扰动，让粒子不是一个模子刻出来的 */
   tone: number;
 }
 
+interface Layout {
+  left: number;
+  top: number;
+  w: number;
+  h: number;
+}
+
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const easeInOutCubic = (t: number) =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
 /**
- * 预生成的填充色。
- *
- * 三千多个粒子每帧拼一次颜色字符串，就是每秒二十万次字符串分配 ——
- * 在 8G 内存的机器上这是白白制造 GC 压力。把透明度量化成十几档，
- * 颜色串只在模块加载时建一次，之后全是查表。
+ * 预生成的填充色。三千多个粒子每帧拼一次颜色串就是每秒二十万次字符串
+ * 分配，在 8G 内存的机器上纯属自找 GC 压力。透明度量化成十几档，
+ * 颜色串只在模块加载时建一次。
  */
 const ALPHA_BUCKETS = 14;
 const WHITE_STYLES = Array.from({ length: ALPHA_BUCKETS }, (_, i) =>
@@ -91,11 +103,10 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/**
- * 把院徽读成一张点阵。**选中的点全部返回，不做抽稀。**
- * 抽稀会让相邻点隔开好几个像素，线条直接断掉 —— 见上面 SAMPLE_W 的说明。
- */
-async function sampleEmblem(sampleW: number): Promise<{ x: number; y: number }[]> {
+/** 把院徽读成点阵。选中的点全部返回，不抽稀 */
+async function sampleEmblem(
+  sampleW: number,
+): Promise<{ pts: { x: number; y: number }[]; h: number }> {
   const img = await loadImage(EMBLEM_SRC);
   const w = sampleW;
   const h = Math.max(1, Math.round(sampleW * (img.height / img.width)));
@@ -104,7 +115,7 @@ async function sampleEmblem(sampleW: number): Promise<{ x: number; y: number }[]
   off.width = w;
   off.height = h;
   const octx = off.getContext('2d', { willReadFrequently: true });
-  if (!octx) return [];
+  if (!octx) return { pts: [], h };
 
   octx.drawImage(img, 0, 0, w, h);
   const { data } = octx.getImageData(0, 0, w, h);
@@ -115,38 +126,38 @@ async function sampleEmblem(sampleW: number): Promise<{ x: number; y: number }[]
       if (data[(y * w + x) * 4 + 3] > ALPHA_CUTOFF) pts.push({ x, y });
     }
   }
-  return pts;
+  return { pts, h };
 }
 
 function buildParticles(
   pts: { x: number; y: number }[],
   sampleW: number,
+  sampleH: number,
   W: number,
   H: number,
-): Particle[] {
-  if (pts.length === 0) return [];
-
-  // 院徽在屏幕上的尺寸。放大不会让线条断开 —— 粒径是按 emblemW/sampleW
-  // 同比例算的，格距和半径一起变大，比例始终一致。
+): { particles: Particle[]; layout: Layout } {
+  // 院徽在屏幕上的尺寸。放大不会让线条断开 —— 粒径是按比例算的
   const emblemW = Math.min(W * 0.62, 380);
   const scale = emblemW / sampleW;
   const cx = W / 2;
-  // 略微偏上，视线落点更舒服
   const cy = H * 0.44;
+  const emblemH = sampleH * scale;
 
-  let maxY = 0;
-  for (const p of pts) if (p.y > maxY) maxY = p.y;
-  const halfH = (maxY * scale) / 2;
+  const layout: Layout = {
+    left: cx - emblemW / 2,
+    top: cy - emblemH / 2,
+    w: emblemW,
+    h: emblemH,
+  };
 
-  /**
-   * 粒径。必须跟着 scale 走 —— 半径小于相邻采样点的间距时线条会断开。
-   * 0.7 倍格距配合少量随机，相邻点刚好咬合又不至于糊成一片。
-   */
+  if (pts.length === 0) return { particles: [], layout };
+
+  // 粒径必须跟着 scale 走：半径小于相邻采样点间距时线条会断开
   const baseR = scale * 0.7;
 
-  return pts.map((p) => {
+  const particles = pts.map((p) => {
     const tx = cx + (p.x - sampleW / 2) * scale;
-    const ty = cy + p.y * scale - halfH;
+    const ty = cy + (p.y - sampleH / 2) * scale;
 
     // 起点：以院徽为中心向外散落，保证不会一开始就压在目标位置上
     const angle = Math.random() * Math.PI * 2;
@@ -159,15 +170,15 @@ function buildParticles(
       ty,
       r: baseR * (0.85 + Math.random() * 0.3),
       delay: Math.random() * 240,
-      dx: Math.cos(angle),
-      dy: Math.sin(angle),
-      dist: 160 + Math.random() * 420,
       tone: Math.random(),
     };
   });
+
+  return { particles, layout };
 }
 
-function draw(
+/** 画水滴。清晰化阶段结束后就不画了，交给真正的院徽图 */
+function drawDots(
   ctx: CanvasRenderingContext2D,
   particles: Particle[],
   t: number,
@@ -175,74 +186,108 @@ function draw(
   H: number,
 ): void {
   ctx.clearRect(0, 0, W, H);
+  if (t >= CONVERGE_MS + RESOLVE_MS) return;
+
+  // 显影期间水滴整体淡出，把画面让给清晰的院徽
+  const fade = t <= CONVERGE_MS ? 1 : 1 - (t - CONVERGE_MS) / RESOLVE_MS;
 
   for (const p of particles) {
-    // 每个粒子有自己的起飞时刻，localT 才是它的本地时间
     const localT = t - p.delay;
+    if (localT <= 0) continue;
 
     let x: number;
     let y: number;
     let alpha: number;
 
-    if (localT <= 0) {
-      continue; // 还没起飞，不画
-    } else if (localT < CONVERGE_MS) {
-      // 汇聚：从起点飞向院徽上的位置
+    if (localT < CONVERGE_MS) {
       const k = easeOutCubic(localT / CONVERGE_MS);
       x = p.sx + (p.tx - p.sx) * k;
       y = p.sy + (p.ty - p.sy) * k;
       alpha = Math.min(1, k * 1.6);
-    } else if (localT < CONVERGE_MS + HOLD_MS) {
-      // 停驻：轻微呼吸，完全静止会显得像贴图
-      const w = (localT - CONVERGE_MS) / HOLD_MS;
+    } else {
       x = p.tx;
       y = p.ty;
-      alpha = 0.85 + 0.15 * Math.sin(w * Math.PI * 3 + p.tone * 6);
-    } else if (t < TOTAL_MS) {
-      // 散开：沿着来时的方向飞回去并淡出
-      const k = easeOutCubic((t - CONVERGE_MS - HOLD_MS) / DISPERSE_MS);
-      x = p.tx + p.dx * p.dist * k;
-      y = p.ty + p.dy * p.dist * k;
-      alpha = Math.max(0, 1 - k);
-    } else {
-      continue;
+      alpha = 0.92;
     }
 
+    alpha *= fade;
     if (alpha <= 0.01) continue;
 
     const bucket = Math.min(
       ALPHA_BUCKETS - 1,
       Math.max(0, Math.round(alpha * (ALPHA_BUCKETS - 1))),
     );
-    // 多数是水白，少部分偏青，做出层次
     ctx.fillStyle = p.tone > 0.75 ? CYAN_STYLES[bucket] : WHITE_STYLES[bucket];
-
-    // 用方块而不是圆。这个尺寸（1~2px）下肉眼分不出，但快好几倍 ——
-    // 三千多个粒子每秒六万次 arc+fill，在低配机器上会掉帧。
+    // 用方块而不是圆。这个尺寸下肉眼分不出，但快好几倍
     ctx.fillRect(x - p.r, y - p.r, p.r * 2, p.r * 2);
   }
 }
 
+/**
+ * 更新院徽图的位置/透明度/模糊。
+ *
+ * 每帧都写 style 会不断触发布局计算，所以量化后比对 —— 值没实质变化
+ * 就整个跳过。
+ */
+function makeBadgeUpdater(el: HTMLElement) {
+  let lastKey = '';
+  return (
+    box: Layout,
+    opacity: number,
+    blur: number,
+    scale: number,
+  ): void => {
+    const key = `${box.left | 0}|${box.top | 0}|${box.w | 0}|${
+      box.h | 0
+    }|${(opacity * 40) | 0}|${blur.toFixed(1)}|${scale.toFixed(3)}`;
+    if (key === lastKey) return;
+    lastKey = key;
+
+    el.style.left = `${box.left}px`;
+    el.style.top = `${box.top}px`;
+    el.style.width = `${box.w}px`;
+    el.style.height = `${box.h}px`;
+    el.style.opacity = String(opacity);
+    el.style.filter = blur > 0.05 ? `blur(${blur.toFixed(1)}px)` : 'none';
+    el.style.transform = `scale(${scale})`;
+  };
+}
+
 interface Props {
-  /** 动画结束（或被跳过、或失败兜底）时调用。必须保证只调一次 */
+  /** 覆盖层完全消失后调用，此时才该摘掉它 */
   onDone: () => void;
 }
 
 export default function WaterIntro({ onDone }: Props) {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const badgeRef = useRef<HTMLDivElement>(null);
   /** 用 ref 存回调，避免父组件每次重渲染都重启动画 */
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
   useEffect(() => {
+    const wrap = wrapRef.current;
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const badge = badgeRef.current;
+    if (!wrap || !canvas || !badge) {
+      onDoneRef.current();
+      return;
+    }
 
     let finished = false;
     const finish = () => {
       if (finished) return;
       finished = true;
       onDoneRef.current();
+    };
+
+    /** 收尾：整块覆盖层淡出，让底下的登录页透出来，然后再摘掉自己 */
+    const handoff = () => {
+      if (finished) return;
+      wrap.style.transition = `opacity ${HANDOFF_MS}ms ease-out`;
+      wrap.style.opacity = '0';
+      window.setTimeout(finish, HANDOFF_MS);
     };
 
     // 兜底：不管动画走到哪，到点就放行
@@ -279,20 +324,75 @@ export default function WaterIntro({ onDone }: Props) {
     resize();
     window.addEventListener('resize', resize);
 
+    const updateImage = makeBadgeUpdater(badge);
+    let particles: Particle[] = [];
+    let layout: Layout = { left: 0, top: 0, w: 0, h: 0 };
+    /**
+     * 飞行终点：登录页顶部那个真院徽的位置。
+     *
+     * ⚠️ 必须**等到飞行阶段开始时才量**。一开始就量会拿到错的坐标 ——
+     * 那一刻登录页自己的入场动画（y:30、scale:0.95）还没播完，
+     * getBoundingClientRect 量到的是动画中途的位置，徽章会落偏。
+     */
+    let target: Layout | null = null;
+    let targetMeasured = false;
+
     let raf = 0;
     let cancelled = false;
-    let particles: Particle[] = [];
     const start = performance.now();
 
     const frame = (now: number) => {
       if (cancelled) return;
       const t = now - start;
 
-      draw(ctx, particles, t, W, H);
+      drawDots(ctx, particles, t, W, H);
+
+      if (t < CONVERGE_MS) {
+        // 还没显影
+        updateImage(layout, 0, MAX_BLUR, 1.05);
+      } else if (t < CONVERGE_MS + RESOLVE_MS) {
+        /**
+         * 显影：白色徽章浮出来、模糊退去。
+         *
+         * 透明度比模糊晚一步跟上（前 30% 完全不显）—— 水滴此刻正在淡出，
+         * 徽章要是同时淡入，两者叠在同一片区域，谁都看不清。
+         * 先让水滴退，徽章再显。
+         */
+        const p = (t - CONVERGE_MS) / RESOLVE_MS;
+        const shape = easeOutCubic(Math.min(1, Math.max(0, (p - 0.3) / 0.7)));
+        updateImage(layout, shape, MAX_BLUR * (1 - shape), 1.05 - 0.05 * shape);
+      } else {
+        // 飞向登录页的真实位置。到这一刻登录页的入场动画早已结束，
+        // 量到的才是最终坐标
+        if (!targetMeasured) {
+          targetMeasured = true;
+          const el = document.getElementById(LOGIN_EMBLEM_ID);
+          if (el) {
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+              target = { left: r.left, top: r.top, w: r.width, h: r.height };
+            }
+          }
+        }
+
+        const k = easeInOutCubic(Math.min(1, (t - CONVERGE_MS - RESOLVE_MS) / FLY_MS));
+        const dst = target ?? layout;
+        updateImage(
+          {
+            left: layout.left + (dst.left - layout.left) * k,
+            top: layout.top + (dst.top - layout.top) * k,
+            w: layout.w + (dst.w - layout.w) * k,
+            h: layout.h + (dst.h - layout.h) * k,
+          },
+          1,
+          0,
+          1,
+        );
+      }
 
       if (t >= TOTAL_MS) {
-        finish();
-        return; // 不排下一帧 —— 动画结束就彻底停掉，不留常驻循环
+        handoff();
+        return; // 不排下一帧 —— 动画结束就彻底停掉
       }
       raf = requestAnimationFrame(frame);
     };
@@ -300,9 +400,12 @@ export default function WaterIntro({ onDone }: Props) {
     void (async () => {
       try {
         const sampleW = isMobile ? SAMPLE_W_MOBILE : SAMPLE_W_DESKTOP;
-        const pts = await sampleEmblem(sampleW);
+        const { pts, h } = await sampleEmblem(sampleW);
         if (cancelled) return;
-        particles = buildParticles(pts, sampleW, W, H);
+
+        const built = buildParticles(pts, sampleW, h, W, H);
+        particles = built.particles;
+        layout = built.layout;
 
         if (particles.length === 0) {
           // 采样不出东西（图挂了/透明区判断失误），别卡着
@@ -310,6 +413,8 @@ export default function WaterIntro({ onDone }: Props) {
           finish();
           return;
         }
+
+        updateImage(layout, 0, MAX_BLUR, 1.05);
         raf = requestAnimationFrame(frame);
       } catch {
         // 图加载失败、canvas 被污染……任何异常都不能把人挡在登录页外
@@ -327,15 +432,55 @@ export default function WaterIntro({ onDone }: Props) {
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
+    <div
+      ref={wrapRef}
       style={{
         position: 'fixed',
         inset: 0,
         zIndex: 200,
-        // 挡住点击，免得用户在动画期间点到底下还没露出来的登录控件
+        // 不透明，且与登录页共用同一个渐变常量 —— 交接时它整块淡出即可，
+        // 底下那层不需要做任何配合
+        background: LOGIN_GRADIENT,
+        // 挡住点击，免得动画期间点到底下还没露出来的登录控件
         pointerEvents: 'auto',
       }}
-    />
+    >
+      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0 }} />
+
+      {/*
+        ⚠️ 院徽外面必须垫白色圆底。
+
+        院徽图本身是**黑色镂空透明底**的，直接摆在深蓝背景上对比度极低，
+        糊成一团灰。登录页正是因为这个问题才用白圆底衬着（侧边栏也一样）。
+
+        内边距用百分比（10%），会跟着尺寸一起缩放 —— 所以飞到最后
+        380px → 80px 时，内部院徽正好是 64px，与登录页那个严丝合缝。
+      */}
+      <div
+        ref={badgeRef}
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          opacity: 0,
+          background: '#ffffff',
+          borderRadius: '50%',
+          boxSizing: 'border-box',
+          padding: '10%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          pointerEvents: 'none',
+          // 只在存在的这几秒里开启，用完随组件一起消失
+          willChange: 'opacity, filter, transform',
+        }}
+      >
+        <img
+          src={EMBLEM_SRC}
+          alt=""
+          style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+        />
+      </div>
+    </div>
   );
 }
