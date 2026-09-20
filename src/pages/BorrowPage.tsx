@@ -6,6 +6,7 @@ import {
 import { ArrowLeftOutlined, SwapOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import dayjs from 'dayjs';
+import { useAuth } from '../contexts/AuthContext';
 import { useItems } from '../hooks/useItems';
 import { useBorrowing } from '../hooks/useBorrowing';
 import { CATEGORY_LABELS, CATEGORY_COLORS } from '../types';
@@ -15,6 +16,7 @@ const { Title, Text } = Typography;
 
 export default function BorrowPage() {
   const { id } = useParams<{ id: string }>();
+  const { isAdmin, guest } = useAuth();
   const { items } = useItems();
   const { borrowItem } = useBorrowing();
   const navigate = useNavigate();
@@ -42,7 +44,7 @@ export default function BorrowPage() {
 
     setLoading(true);
     setTimeout(async () => {
-      const success = await borrowItem({
+      const result = await borrowItem({
         itemId: item.id,
         itemName: item.name,
         borrowerName: values.borrowerName as string,
@@ -55,11 +57,11 @@ export default function BorrowPage() {
         expectedReturnDate: (values.expectedReturnDate as dayjs.Dayjs).toISOString(),
       });
 
-      if (success) {
+      if (result.ok) {
         message.success('借出成功！');
         setShowCelebration(true);
       } else {
-        message.error('借出失败，请检查库存');
+        message.error(result.error ?? '借出失败');
       }
       setLoading(false);
     }, 300);
@@ -67,7 +69,11 @@ export default function BorrowPage() {
 
   return (
     <div style={{ maxWidth: 600, margin: '0 auto', paddingBottom: 32 }}>
-      <ParticleCelebration show={showCelebration} onComplete={() => navigate('/records')} />
+      {/* 访客和内部人员读不到借记记录，别把他们送去一个进不去的页面 */}
+      <ParticleCelebration
+        show={showCelebration}
+        onComplete={() => navigate(isAdmin ? '/records' : '/items')}
+      />
       <Button type="link" icon={<ArrowLeftOutlined />} onClick={() => navigate('/items')} style={{ marginBottom: 16, padding: 0 }}>
         返回物品列表
       </Button>
@@ -101,6 +107,9 @@ export default function BorrowPage() {
               quantity: 1,
               borrowDate: dayjs(),
               expectedReturnDate: dayjs().add(7, 'day'),
+              // 访客登录时填过姓名和电话，这里直接带上，不用再填一遍
+              borrowerName: guest?.name,
+              phone: guest?.phone,
             }}
           >
             <Divider plain style={{ fontSize: 13, color: '#94A3B8' }}>借用人信息</Divider>
@@ -109,8 +118,13 @@ export default function BorrowPage() {
               <Input placeholder="请输入借用人姓名" />
             </Form.Item>
 
-            <Form.Item name="borrowerId" label="学号/工号" rules={[{ required: true, message: '请输入学号或工号' }]}>
-              <Input placeholder="如：202301001" />
+            {/* 外部借用人不一定有学号/工号；留空时数据库会拿手机号兜底当标识 */}
+            <Form.Item
+              name="borrowerId"
+              label={guest ? '学号/工号（可留空）' : '学号/工号'}
+              rules={guest ? [] : [{ required: true, message: '请输入学号或工号' }]}
+            >
+              <Input placeholder={guest ? '没有的话留空即可' : '如：202301001'} />
             </Form.Item>
 
             <Form.Item name="phone" label="手机号"

@@ -16,8 +16,11 @@
  *   DINGTALK_CLIENT_ID / DINGTALK_CLIENT_SECRET / DINGTALK_PROCESS_CODE
  * SUPABASE_URL 与 SUPABASE_SERVICE_ROLE_KEY 由 Supabase 自动注入。
  *
- * 安全：内置节流 —— 60 秒内重复调用直接返回，避免有人刷这个接口
- * 把钉钉每月 1 万次的免费额度耗光。
+ * 安全：两道闸。
+ *   1. 身份校验 —— 只放行 app_metadata.scau_role === 'admin' 的已登录用户。
+ *      2026-09-20 之前这里是完全开放的，任何人都能触发同步。
+ *   2. 节流 —— 60 秒内重复调用直接返回，避免合法用户反复刷新
+ *      把钉钉每月 1 万次的免费额度耗光。
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -344,6 +347,23 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const sb = createClient(supabaseUrl, serviceKey);
+
+    // ── 身份校验 ──────────────────────────────────────────────
+    // 这个接口以前是公网匿名可调的，唯一防护是下面的 60 秒节流。
+    // 但它用 service_role 写库（绕过 RLS），必须确认调用者真的是管理员 ——
+    // 否则任何人都能反复触发同步、耗光钉钉每月 1 万次的免费额度。
+    // supabase.functions.invoke 会自动带上当前会话的 JWT。
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const callerToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+    if (!callerToken) {
+      return json({ ok: false, error: '需要管理员权限' }, 401);
+    }
+
+    const { data: authData } = await sb.auth.getUser(callerToken);
+    if (authData?.user?.app_metadata?.scau_role !== 'admin') {
+      return json({ ok: false, error: '需要管理员权限' }, 401);
+    }
 
     // 节流：刚同步过就直接返回，避免被反复调用耗光钉钉额度
     const { data: statusRow } = await sb

@@ -17,6 +17,7 @@ import {
 } from 'recharts';
 import { useItems } from '../hooks/useItems';
 import { useBorrowing } from '../hooks/useBorrowing';
+import { useAuth } from '../contexts/AuthContext';
 import { CATEGORY_LABELS, CATEGORY_COLORS, type ItemCategory } from '../types';
 import { entrySpring } from '../lib/motion';
 import dayjs from 'dayjs';
@@ -72,6 +73,7 @@ function CountUpNumber({ target, duration = 1.5 }: { target: number; duration?: 
 }
 
 export default function DashboardPage() {
+  const { isAdmin } = useAuth();
   const { items, loading: itemsLoading } = useItems();
   const { records, loading: recordsLoading } = useBorrowing();
   const navigate = useNavigate();
@@ -128,6 +130,20 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count], i) => ({ rank: i + 1, name, count }));
   }, [records]);
+
+  /**
+   * 卡片与数值按索引对齐，过滤时必须成对处理 —— 单独过滤一边会串位。
+   *
+   * 非管理员读不到借用记录，「逾期未还」恒为 0，而真实的逾期数可能不是 0。
+   * 显示一个笃定的 0 比不显示更糟：那是在误导。
+   */
+  const visibleStats = useMemo(
+    () =>
+      statCards
+        .map((card, idx) => ({ card, stat: stats[idx] }))
+        .filter(({ card }) => isAdmin || card.key !== 'overdue'),
+    [stats, isAdmin],
+  );
 
   return (
     <div style={{ paddingBottom: 32 }}>
@@ -188,7 +204,7 @@ export default function DashboardPage() {
         }}
       >
         <Row gutter={[16, 16]}>
-          {statCards.map((card, idx) => (
+          {visibleStats.map(({ card, stat }) => (
             <Col xs={12} sm={12} md={6} key={card.key}>
               <TiltCard
                 maxTilt={13}
@@ -213,9 +229,9 @@ export default function DashboardPage() {
                     {card.icon} {card.label}
                   </div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: card.color, lineHeight: 1 }}>
-                    {mounted ? <CountUpNumber target={stats[idx].value} /> : 0}
+                    {mounted ? <CountUpNumber target={stat.value} /> : 0}
                     <span style={{ fontSize: 14, color: '#94A3B8', marginLeft: 4, fontWeight: 400 }}>
-                      {stats[idx].suffix}
+                      {stat.suffix}
                     </span>
                   </div>
                 </Card>
@@ -265,6 +281,8 @@ export default function DashboardPage() {
             </Card>
           </motion.div>
         </Col>
+        {/* 借用趋势来自记录，非管理员读不到 —— 一张全 0 的图看起来就像"借阅量为零" */}
+        {isAdmin && (
         <Col xs={24} md={12}>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -284,9 +302,11 @@ export default function DashboardPage() {
             </Card>
           </motion.div>
         </Col>
+        )}
       </Row>
 
-      {/* Hot items */}
+      {/* Hot items —— 同样来自借用记录，非管理员看不到 */}
+      {isAdmin && (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={mounted ? { opacity: 1, y: 0 } : {}}
@@ -330,6 +350,7 @@ export default function DashboardPage() {
           )}
         </Card>
       </motion.div>
+      )}
         </>
       )}
     </div>

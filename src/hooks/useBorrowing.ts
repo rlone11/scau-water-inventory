@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { BorrowRecord, BorrowStatus } from '../types';
 import { generateId, nowISO } from '../utils/storage';
-import { fetchRecords, createRecord, updateRecord } from '../services/recordService';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
+import { fetchRecords, updateRecord } from '../services/recordService';
 import { fetchItemById, updateItem } from '../services/itemService';
 import { cacheClear } from '../lib/cache';
 import { REFRESH_EVENT } from '../lib/events';
@@ -9,12 +11,25 @@ import { REFRESH_EVENT } from '../lib/events';
 const RECORDS_LIMIT = 500;
 
 export function useBorrowing() {
+  const { isAdmin } = useAuth();
   const [records, setRecords] = useState<BorrowRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // 首次加载 + 自动标记逾期
   useEffect(() => {
+    /**
+     * 访客和内部人员读不到借用记录 —— 数据库里 borrow_records 的策略
+     * 只放行管理员。所以这里连请求都不发：既省一次跨境往返（国内到悉尼
+     * 本来就要好几秒），也免得在控制台刷一片 42501 权限错误。
+     */
+    if (!isAdmin) {
+      setRecords([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -53,10 +68,12 @@ export function useBorrowing() {
         }
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [isAdmin]);
 
   // 监听全局刷新事件
   useEffect(() => {
+    if (!isAdmin) return;
+
     const forceRefresh = async () => {
       cacheClear();
       setLoading(true);
@@ -72,12 +89,14 @@ export function useBorrowing() {
     };
     window.addEventListener(REFRESH_EVENT, forceRefresh);
     return () => window.removeEventListener(REFRESH_EVENT, forceRefresh);
-  }, []);
+  }, [isAdmin]);
 
+  /** 重新拉取记录。非管理员直接跳过 —— 他们没有读权限 */
   const refresh = useCallback(async () => {
+    if (!isAdmin) return;
     const data = await fetchRecords(RECORDS_LIMIT);
     setRecords(data);
-  }, []);
+  }, [isAdmin]);
 
   // ---- 乐观借用 ----
 
@@ -94,12 +113,6 @@ export function useBorrowing() {
       borrowDate: string;
       expectedReturnDate: string;
     }) => {
-      // 检查库存
-      const item = await fetchItemById(data.itemId);
-      if (!item || item.availableQty < data.quantity) {
-        return false;
-      }
-
       const optimisticRecord: BorrowRecord = {
         id: generateId(),
         ...data,
@@ -110,20 +123,51 @@ export function useBorrowing() {
       setRecords((prev) => [optimisticRecord, ...prev]);
 
       try {
-        // 并行：创建记录 + 扣减库存
-        await Promise.all([
-          createRecord(optimisticRecord),
-          updateItem(data.itemId, {
-            availableQty: item.availableQty - data.quantity,
-          }),
-        ]);
-        // 后台静默刷新
-        await refresh();
-        return true;
-      } catch {
+        /**
+         * 走数据库函数而不是「建记录 + 改库存」两个并行请求。
+         *
+         * 三个原因：
+         *  1. 访客没有表写权限（RLS 只放行管理员），只能从这条受控通道进
+         *  2. 两个并行请求任一个失败就会账实不符 —— 有记录没扣库存，
+         *     或者扣了库存没记录。RPC 是单事务，要么都成要么都不成
+         *  3. 库存在函数里用 FOR UPDATE 加锁后重读，并发借用不会超借
+         *
+         * 顺带省掉一次 fetchItemById 往返 —— 国内访问悉尼本来就慢。
+         */
+        const { error } = await supabase.rpc('submit_borrow', {
+          p_item_id: data.itemId,
+          p_item_name: data.itemName,
+          p_borrower_name: data.borrowerName,
+          p_borrower_id: data.borrowerId,
+          p_phone: data.phone,
+          p_department: data.department,
+          p_purpose: data.purpose,
+          p_quantity: data.quantity,
+          p_borrow_date: data.borrowDate,
+          p_expected_return_date: data.expectedReturnDate,
+        });
+
+        if (error) throw error;
+
+        /**
+         * 后台静默刷新，失败不影响结果。
+         *
+         * ⚠️ 这里必须吞掉异常：写入已经成功了，如果 refresh 抛出去被下面的
+         * catch 接住，会把乐观记录回滚、返回 false —— 界面说"没借成"，
+         * 数据库里其实已经借出去了。访客刷新时被 RLS 拒绝就是这个场景。
+         */
+        await refresh().catch(() => {});
+        return { ok: true };
+      } catch (e) {
+        console.error('借用失败:', e);
         // 回滚
         setRecords((prev) => prev.filter((r) => r.id !== optimisticRecord.id));
-        return false;
+        // 把服务端的原话透出来 —— 「可借数量不足（当前 3 件）」
+        // 比一句笼统的「请检查库存」有用得多
+        return {
+          ok: false,
+          error: (e as { message?: string })?.message || '借出失败',
+        };
       }
     },
     [refresh],
@@ -190,8 +234,8 @@ export function useBorrowing() {
           }),
         ]);
 
-        // 后台静默刷新
-        await refresh();
+        // 后台静默刷新，失败不影响结果（同上：写成功了就不该被刷新失败推翻）
+        await refresh().catch(() => {});
         return true;
       } catch {
         // 回滚到原始状态

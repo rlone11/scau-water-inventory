@@ -1,6 +1,16 @@
 export type ItemCategory = 'fixed_assets' | 'consumables' | 'activity';
 export type BorrowStatus = 'borrowed' | 'returned' | 'overdue' | 'ignored' | 'consumed';
-export type UserRole = 'admin' | 'user' | null;
+/**
+ * 网站身份。三态，来源见 src/contexts/AuthContext.tsx：
+ *   admin    管理员 —— 钉钉登录且 staff_roles.role = 'admin'，全权限
+ *   internal 学院内部人员 —— 钉钉登录但不在管理员名单，与访客同权
+ *   guest    访客 —— 外部借用人，无 Supabase 会话，只能看库存 + 借东西
+ *
+ * ⚠️ 渲染菜单/按钮时必须穷尽三态（switch + never 兜底），
+ * 不要写成 `isAdmin ? A : B` —— 二元判断套多态状态必然漏 case，
+ * 本项目已经因此把「已忽略」渲染成「已还」过一次。
+ */
+export type ScauRole = 'admin' | 'internal' | 'guest';
 
 export const CATEGORY_LABELS: Record<ItemCategory, string> = {
   fixed_assets: '固定资产类',

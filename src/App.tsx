@@ -5,6 +5,7 @@ import zhCN from 'antd/locale/zh_CN';
 import theme from './theme';
 import { AuthProvider } from './contexts/AuthContext';
 import MainLayout from './components/Layout';
+import RouteGuard, { AdminOnly } from './components/RouteGuard';
 import CursorEffects from './components/CursorEffects';
 import LoginPage from './pages/LoginPage';
 
@@ -33,16 +34,26 @@ function App() {
           <Suspense fallback={<Loading />}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
-              <Route element={<MainLayout />}>
-                <Route path="/" element={<DashboardPage />} />
-                <Route path="/items" element={<ItemListPage />} />
-                <Route path="/items/add" element={<ItemFormPage />} />
-                <Route path="/items/:id/edit" element={<ItemFormPage />} />
-                <Route path="/items/:id/borrow" element={<BorrowPage />} />
-                <Route path="/records" element={<RecordsPage />} />
-                <Route path="/dingtalk" element={<DingTalkPage />} />
-                <Route path="/returns" element={<ReturnPage />} />
-                <Route path="*" element={<NotFoundPage />} />
+              {/* 守卫套在 MainLayout 外面 —— 必须赶在它挂载前拦住，
+                  否则它的 schedulePrefetch 会先打一批注定被拒的请求 */}
+              <Route element={<RouteGuard />}>
+                <Route element={<MainLayout />}>
+                  {/* 所有登录用户：看库存、借东西 */}
+                  <Route path="/" element={<DashboardPage />} />
+                  <Route path="/items" element={<ItemListPage />} />
+                  <Route path="/items/:id/borrow" element={<BorrowPage />} />
+
+                  {/* 仅管理员 */}
+                  <Route element={<AdminOnly />}>
+                    <Route path="/items/add" element={<ItemFormPage />} />
+                    <Route path="/items/:id/edit" element={<ItemFormPage />} />
+                    <Route path="/records" element={<RecordsPage />} />
+                    <Route path="/dingtalk" element={<DingTalkPage />} />
+                    <Route path="/returns" element={<ReturnPage />} />
+                  </Route>
+
+                  <Route path="*" element={<NotFoundPage />} />
+                </Route>
               </Route>
             </Routes>
           </Suspense>

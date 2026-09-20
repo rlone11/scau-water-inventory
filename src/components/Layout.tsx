@@ -13,6 +13,7 @@ import {
   AuditOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
+import type { ScauRole } from '../types';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import WaterBackground from './WaterBackground';
 import BackToTop from './BackToTop';
@@ -24,20 +25,59 @@ import { schedulePrefetch } from '../lib/prefetch';
 
 const { Header, Sider, Content } = AntLayout;
 
-const menuItems = [
-  { key: '/', icon: <DashboardOutlined />, label: '物品数据' },
-  { key: '/items', icon: <AppstoreOutlined />, label: '物品管理' },
-  { key: '/records', icon: <FileTextOutlined />, label: '借记记录' },
-  { key: '/dingtalk', icon: <CloudSyncOutlined />, label: '钉钉审批' },
-  { key: '/returns', icon: <AuditOutlined />, label: '物品核销' },
-];
+/**
+ * 菜单按角色收口。
+ *
+ * ⚠️ 用穷尽 switch 而不是 `isAdmin ? 全部 : 部分` ——
+ * 二元判断套三态身份，以后加角色必然漏 case，而且漏了不报错、
+ * 只是悄悄多显示或少显示一个入口。本项目已经因此把「已忽略」
+ * 渲染成「已还」过一次。default 里的 never 兜底才是真正的价值：
+ * 新增角色忘了处理，tsc 当场报错。
+ *
+ * 注意这只是体验层。真正拦住访客读借用记录的是数据库 RLS ——
+ * 就算有人改前端菜单，也照样查不到手机号。
+ */
+function menuForRole(role: ScauRole | null) {
+  const browse = [
+    { key: '/', icon: <DashboardOutlined />, label: '物品数据' },
+    {
+      key: '/items',
+      icon: <AppstoreOutlined />,
+      label: role === 'admin' ? '物品管理' : '物品借用',
+    },
+  ];
+
+  switch (role) {
+    case 'admin':
+      return [
+        ...browse,
+        { key: '/records', icon: <FileTextOutlined />, label: '借记记录' },
+        { key: '/dingtalk', icon: <CloudSyncOutlined />, label: '钉钉审批' },
+        { key: '/returns', icon: <AuditOutlined />, label: '物品核销' },
+      ];
+
+    case 'internal':
+    case 'guest':
+      // 能看库存、能借东西，但看不到任何人的借用记录
+      return browse;
+
+    case null:
+      // 理论上到不了：RouteGuard 会先把未登录的人弹回登录页
+      return [];
+
+    default: {
+      const unhandled: never = role;
+      return unhandled;
+    }
+  }
+}
 
 export default function MainLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAdmin, logout } = useAuth();
+  const { role, displayName, signOut } = useAuth();
 
   useKeyboardShortcuts();
 
@@ -55,10 +95,12 @@ export default function MainLayout() {
     setMobileOpen(false);
   };
 
-  const handleLogout = () => {
-    logout();
-    message.success('已退出管理员模式');
-    navigate('/');
+  const handleSignOut = async () => {
+    // signOut 内部会清掉内存缓存（cacheClear），否则下一个登录的人
+    // 会读到上一个人留下的列表数据
+    await signOut();
+    message.success('已退出登录');
+    navigate('/login', { replace: true });
   };
 
   const sidebarContent = (
@@ -113,7 +155,7 @@ export default function MainLayout() {
         theme="dark"
         mode="inline"
         selectedKeys={[selectedKey]}
-        items={menuItems}
+        items={menuForRole(role)}
         onClick={handleMenuClick}
         style={{ borderInlineEnd: 'none', marginTop: 8, flex: 1 }}
       />
@@ -234,33 +276,31 @@ export default function MainLayout() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <RefreshButton />
-            {isAdmin ? (
+            {/* RouteGuard 保证这里 role 一定非空 */}
+            {role && (
               <Dropdown
                 menu={{
                   items: [
                     {
                       key: 'logout',
                       icon: <LogoutOutlined />,
-                      label: '退出管理',
-                      onClick: handleLogout,
+                      label: role === 'admin' ? '退出管理' : '退出登录',
+                      onClick: () => void handleSignOut(),
                     },
                   ],
                 }}
                 placement="bottomRight"
               >
-                <Button type="text" icon={<SettingOutlined />} style={{ color: '#fff' }}>
-                  <span className="header-subtitle">管理员</span>
+                <Button
+                  type="text"
+                  icon={role === 'admin' ? <SettingOutlined /> : <UserOutlined />}
+                  style={{ color: '#fff' }}
+                >
+                  <span className="header-subtitle">
+                    {role === 'admin' ? '管理员' : (displayName ?? '用户')}
+                  </span>
                 </Button>
               </Dropdown>
-            ) : (
-              <Button
-                type="text"
-                icon={<UserOutlined />}
-                style={{ color: '#fff' }}
-                onClick={() => navigate('/login')}
-              >
-                <span className="header-subtitle">登录</span>
-              </Button>
             )}
           </div>
         </Header>
