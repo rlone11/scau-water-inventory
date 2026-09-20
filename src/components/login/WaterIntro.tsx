@@ -57,6 +57,14 @@ const HANDOFF_MS = 320;
 /** "显影"之前的最大模糊半径 */
 const MAX_BLUR = 12;
 
+/**
+ * 白圆底的内边距，占徽章直径的比例。
+ *
+ * ⚠️ 这个值同时也是「水滴拼的尺寸」和「清晰院徽的尺寸」之差的分母 ——
+ * 见 buildParticles 里的说明。定得越大，清晰那一刻院徽缩得越明显。
+ */
+const BADGE_PADDING_RATIO = 0.04;
+
 /** 兜底：动画再慢也不能超过这个点 */
 const FAILSAFE_MS = TOTAL_MS + HANDOFF_MS + 1500;
 
@@ -136,18 +144,30 @@ function buildParticles(
   W: number,
   H: number,
 ): { particles: Particle[]; layout: Layout } {
-  // 院徽在屏幕上的尺寸。放大不会让线条断开 —— 粒径是按比例算的
-  const emblemW = Math.min(W * 0.62, 380);
-  const scale = emblemW / sampleW;
+  // 白圆底的直径。放大不会让线条断开 —— 粒径是按比例算的
+  const badgeSize = Math.min(W * 0.62, 380);
+  const padding = badgeSize * BADGE_PADDING_RATIO;
+
+  /**
+   * ⚠️ 水滴要拼成的尺寸是**里面那张院徽图**的尺寸，不是白圆底的尺寸。
+   *
+   * 之前这里用的是白圆底直径，于是水滴拼出 380px 的院徽，而清晰之后
+   * 那张图只有 380×(1−2×0.04)=350px —— 显影那一下院徽会「缩一下」，
+   * 同时外面冒出一圈白边，两件事叠在一起格外明显。
+   *
+   * 现在 scale 按内图算：水滴拼多大，清晰之后就是多大，一点不缩。
+   * 白圆底只是比它大出一圈 padding 而已。
+   */
+  const imgW = badgeSize - padding * 2;
+  const scale = imgW / sampleW;
   const cx = W / 2;
   const cy = H * 0.44;
-  const emblemH = sampleH * scale;
 
   const layout: Layout = {
-    left: cx - emblemW / 2,
-    top: cy - emblemH / 2,
-    w: emblemW,
-    h: emblemH,
+    left: cx - badgeSize / 2,
+    top: cy - badgeSize / 2,
+    w: badgeSize,
+    h: badgeSize,
   };
 
   if (pts.length === 0) return { particles: [], layout };
@@ -251,11 +271,11 @@ function makeBadgeUpdater(el: HTMLElement) {
      * ⚠️ 内边距必须算成 px，**不能用百分比**。
      *
      * CSS 的百分比 padding 是相对**包含块的宽度**算的，不是元素自身宽度。
-     * 这个徽章在固定全屏的覆盖层里，所以 `padding: 10%` 在 1200px 宽的屏上
+     * 这个徽章在固定全屏的覆盖层里，所以写 `padding: 10%` 在 1200px 宽的屏上
      * 是 120px 而不是 38px —— 院徽被挤成一小坨，跟登录页那个完全对不上。
-     * 10% 是登录页那个真徽章的固定比例（80px 外圈 / 8px 内边距）。
+     * 必须按自身宽度算成 px。比例与登录页那个真徽章保持一致。
      */
-    el.style.padding = `${box.w * 0.1}px`;
+    el.style.padding = `${box.w * BADGE_PADDING_RATIO}px`;
     el.style.opacity = String(opacity);
     el.style.filter = blur > 0.05 ? `blur(${blur.toFixed(1)}px)` : 'none';
     el.style.transform = `scale(${scale})`;

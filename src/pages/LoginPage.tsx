@@ -182,7 +182,10 @@ export default function LoginPage() {
               alignItems: 'center',
               justifyContent: 'center',
               margin: '0 auto 16px',
-              padding: 8,
+              // 4% —— 必须和入场动画里的 BADGE_PADDING_RATIO 一致，
+              // 否则徽章飞过来落位时白圈粗细会跳一下。
+              // ⚠️ 不能写百分比：百分比 padding 是按包含块宽度算的，不是自身宽度
+              padding: 3.2,
               overflow: 'hidden',
               boxShadow: '0 6px 20px rgba(0,0,0,0.28)',
             }}
