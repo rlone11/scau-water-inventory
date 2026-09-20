@@ -181,7 +181,7 @@ function buildParticles(
 
     // 起点：以院徽为中心向外散落，保证不会一开始就压在目标位置上
     const angle = Math.random() * Math.PI * 2;
-    const radius = emblemW * (1.2 + Math.random() * 3.2);
+    const radius = badgeSize * (1.2 + Math.random() * 3.2);
 
     return {
       sx: cx + Math.cos(angle) * radius,
