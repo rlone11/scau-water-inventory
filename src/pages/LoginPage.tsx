@@ -41,9 +41,11 @@ const floatingDrops = [
 /**
  * 登录页 —— 从「管理员密码框」改成「身份分流」。
  *
- * 两条主路：
- *   ① 学院管理人员 —— 钉钉扫码，拿到真身份，权限看 staff_roles 里的角色
- *   ② 我来借东西   —— 外部借用人，不验证，只记姓名电话
+ * 两条主路，**默认落在 ①**：
+ *   ① 我来借东西   —— 外部借用人，不验证，只记姓名电话
+ *   ② 学院管理人员 —— 钉钉扫码，拿到真身份，权限看 staff_roles 里的角色
+ * 来借东西的人比管理员多得多，所以默认给 ①。顺带一个好处：钉钉 SDK 只挂在
+ * ② 的组件里，访客不切过去就一个字节都不会加载。
  * 外加一个平时不用的应急入口（钉钉整个链路断掉时还能进后台）。
  *
  * 2026-09-20 之前这里是一个硬编码密码 `0313`。真正的门现在在数据库 RLS 上，
@@ -54,7 +56,7 @@ type LoginMode = 'dingtalk' | 'guest' | 'emergency';
 export default function LoginPage() {
   const { role, loading } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<LoginMode>('dingtalk');
+  const [mode, setMode] = useState<LoginMode>('guest');
 
   // 拿不到 sessionStorage（隐私模式等）就不播动画，直接进登录页
   const [showIntro, setShowIntro] = useState(() => {
@@ -240,8 +242,8 @@ export default function LoginPage() {
             value={mode === 'emergency' ? 'dingtalk' : mode}
             onChange={(v) => setMode(v as LoginMode)}
             options={[
-              { label: '学院管理人员', value: 'dingtalk' },
               { label: '我来借东西', value: 'guest' },
+              { label: '学院管理人员', value: 'dingtalk' },
             ]}
             style={{ marginBottom: 20 }}
           />
