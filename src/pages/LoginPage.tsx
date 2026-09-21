@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Card, Button, Segmented, Typography } from 'antd';
 import { useAuth } from '../contexts/AuthContext';
 import { LOGIN_GRADIENT, LOGIN_EMBLEM_ID } from '../theme';
-import { toggleSpring } from '../lib/motion';
+import { toggleTransition } from '../lib/motion';
 import LoginBackground from '../components/LoginBackground';
 import WaterIntro from '../components/login/WaterIntro';
 import DingTalkQrLogin from '../components/login/DingTalkQrLogin';
@@ -277,12 +277,16 @@ export default function LoginPage() {
             三个表单高矮差很多（二维码面板 280px，访客表单不到一半），而卡片是
             **垂直居中**的 —— 高度直接突变，整张卡片连同院徽、标题会一起跳位，
             切换看着就很生硬。这里把内容的真实高度量出来喂给 motion，
-            让它用 toggleSpring 弹过去；overflow:hidden 则让新表单是被"撑开"
-            露出来的，而不是凭空冒出来。
+            让它平滑地拉过去；overflow:hidden 则让新表单是被"撑开"露出来的，
+            而不是凭空冒出来。
+
+            ⚠️ 过渡本身用 toggleTransition（匀速、无回弹、0.35s），别再改回弹簧 ——
+            原因写在 motion.ts 那条上：height 动画每帧都要重新布局整张卡片，
+            回弹和拖长的收尾都是在白花布局。
           */}
           <motion.div
             animate={formHeight === undefined ? {} : { height: formHeight }}
-            transition={reduceMotion ? { duration: 0 } : toggleSpring}
+            transition={reduceMotion ? { duration: 0 } : toggleTransition}
             style={{ overflow: 'hidden' }}
           >
             {/* paddingBottom 不是留白：按钮在最后一个，不给几像素下去，
