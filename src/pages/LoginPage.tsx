@@ -65,7 +65,12 @@ export default function LoginPage() {
     }
   });
 
-  const goHome = () => navigate('/', { replace: true });
+  /**
+   * ⚠️ 必须 memo 住：DingTalkQrLogin 的 effect 依赖里带着它，身份每次变都会让
+   * 那个 effect 重跑一遍，而重跑的清理函数会把 alive 置成 false。要是正好卡在
+   * SDK 加载中途，「二维码就绪」那一步就被跳过了，加载圈会一直转下去。
+   */
+  const goHome = useCallback(() => navigate('/', { replace: true }), [navigate]);
 
   const handleIntroDone = useCallback(() => {
     try {
@@ -241,7 +246,8 @@ export default function LoginPage() {
             style={{ marginBottom: 20 }}
           />
 
-          {mode === 'dingtalk' && <DingTalkQrLogin onLoggedIn={goHome} />}
+          {/* introDone 见 DingTalkQrLogin 里的说明：SDK 必须等入场动画播完再加载 */}
+          {mode === 'dingtalk' && <DingTalkQrLogin onLoggedIn={goHome} introDone={!showIntro} />}
           {mode === 'guest' && <GuestLoginForm onLoggedIn={goHome} />}
           {mode === 'emergency' && <EmergencyLoginForm onLoggedIn={goHome} />}
         </Card>

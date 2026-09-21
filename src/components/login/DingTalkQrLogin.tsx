@@ -83,9 +83,22 @@ async function exchangeAuthCode(authCode: string): Promise<{ email: string; pass
 interface Props {
   /** 登录成功（会话已建立）时调用 */
   onLoggedIn: () => void;
+  /**
+   * 入场动画是否已经结束。**必须等它变成 true 才允许加载钉钉 SDK。**
+   *
+   * ⚠️ 这条不是优化，是必需的（2026-09-21 加的）。
+   *
+   * 钉钉 SDK 挂载后会异步拉起第二波活儿：再拉一个 login.js 解析执行（~82ms），
+   * 以及一个阿里云埋点 XHR 的回调（~110ms）。实测这两下正好砸在入场动画
+   * 「汇聚」播到一半的位置，主线程被占住 74~83ms —— 用户看到的就是
+   * 「粒子飞着飞着猛卡一下」。A/B 实测：把 SDK 推迟 8 秒，汇聚期间掉帧数归零。
+   *
+   * 这个 SDK 只服务登录页，等动画播完再加载没有任何代价。
+   */
+  introDone: boolean;
 }
 
-export default function DingTalkQrLogin({ onLoggedIn }: Props) {
+export default function DingTalkQrLogin({ onLoggedIn, introDone }: Props) {
   const [phase, setPhase] = useState<'loading' | 'ready' | 'exchanging' | 'error'>('loading');
   const [message, setMessage] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -95,6 +108,14 @@ export default function DingTalkQrLogin({ onLoggedIn }: Props) {
   const stateRef = useRef('');
 
   useEffect(() => {
+    /**
+     * ⚠️ 入场动画还在播的时候，这里什么都不做 —— 一个字节的 SDK 都不去动。
+     * 依赖里有 introDone，等它变成 true 这个 effect 会重跑，那时才开始初始化。
+     * 动画没播（sessionStorage 里已标记 / 用户关了动画）时 introDone 一开始就是
+     * true，行为跟以前完全一样。
+     */
+    if (!introDone) return;
+
     let alive = true;
 
     const handle = async (result: DTLoginResult) => {
@@ -172,8 +193,8 @@ export default function DingTalkQrLogin({ onLoggedIn }: Props) {
     return () => {
       alive = false;
     };
-    // attempt 变化时整个重建（重试）
-  }, [attempt, onLoggedIn]);
+    // attempt 变化时整个重建（重试）；introDone 由 false 变 true 时补上第一次初始化
+  }, [attempt, onLoggedIn, introDone]);
 
   const retry = () => {
     initedRef.current = false;
