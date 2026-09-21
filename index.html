@@ -7,6 +7,15 @@
     <meta name="theme-color" content="#0369A1" />
     <meta name="description" content="四川农业大学水利水电学院办公室物品统计管理系统" />
     <title>水利水电学院 - 物品管理系统</title>
+    <!--
+      预加载登录页的院徽。
+
+      ⚠️ 这不是可有可无的优化：入场动画要把这张图读成点阵才画得出第一帧，
+      而图片是路由分块加载完、LoginPage 渲染时才被浏览器发现的 —— 实测国内
+      连 GitHub Pages 要 0.4~1.5 秒。提前到 HTML 里发起，动画就能早开始。
+      用 %BASE_URL% 而不是写死路径：三个平台的 base 不一样。
+    -->
+    <link rel="preload" as="image" href="%BASE_URL%images/镂空院徽2_标清.png" />
   </head>
   <body>
     <div id="root"></div>

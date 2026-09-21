@@ -4,11 +4,13 @@ import { LOGIN_GRADIENT, LOGIN_EMBLEM_ID } from '../../theme';
 /**
  * 入场动画：水滴汇聚成院徽 → 由模糊变清晰 → 飞向登录页顶部的位置落位。
  *
- * 四个阶段：
- *   0 ~ 1200ms  水滴从屏幕各处飞聚，拼出院徽轮廓
- *   1200 ~ 2050 院徽图从模糊变锐利，水滴同时淡出（"显影"）
- *   2050 ~ 2900 清晰的院徽缩小、飞到登录页顶部那个院徽的位置
- *   2900 ~ 3220 整块覆盖层淡出，与底下的登录页交叉
+ * 四个阶段（时长是下面那几个常量，改的时候这里不用跟着改）：
+ *   汇聚   水滴从屏幕各处飞聚，拼出院徽轮廓
+ *   显影   白圆从中心往外漫，漫过的地方院徽从模糊变锐利、水滴退场
+ *   飞行   清晰的院徽缩小、飞到登录页顶部那个院徽的位置
+ *   交接   整块覆盖层淡出，与底下的登录页交叉
+ *
+ * ⚠️ 时钟从**第一帧真正画出来**才开始走，不是从组件挂载开始 —— 见下面 start 的说明。
  *
  * 交接为什么能无缝：覆盖层铺的是**和登录页一模一样的不透明渐变**
  * （LOGIN_GRADIENT，两边共用一个常量），所以底下那一层不需要做任何配合 ——
@@ -356,8 +358,14 @@ export default function WaterIntro({ onDone }: Props) {
       window.setTimeout(finish, HANDOFF_MS);
     };
 
-    // 兜底：不管动画走到哪，到点就放行
-    const failsafe = window.setTimeout(finish, FAILSAFE_MS);
+    /**
+     * 兜底：不管动画走到哪，到点就放行。
+     *
+     * ⚠️ 这里是**可变绑定**，不是常量 —— 第一帧真正画出来时会重新计时
+     * （见下面 frame 里）。最初这一次仍然要留着：万一院徽图一直加载不出来，
+     * 得有人在后面把人放进去。
+     */
+    let failsafe = window.setTimeout(finish, FAILSAFE_MS);
 
     // 用户在系统里关了动画 —— 尊重这个设置，直接进登录页
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -405,10 +413,30 @@ export default function WaterIntro({ onDone }: Props) {
 
     let raf = 0;
     let cancelled = false;
-    const start = performance.now();
+
+    /**
+     * 动画时钟的起点。**故意不在这里取**，留到第一帧才取。
+     *
+     * 第一帧要等院徽图下载 + 解码 + 点阵采样完才画得出来，实测国内连
+     * GitHub Pages 拿那张 79KB 的院徽图要 0.4~1.5 秒；而"汇聚"整段总共才
+     * 1.6 秒。时钟要是从 effect 这里就开始走，这段时间动画全在空转 ——
+     * 实测最多有 **94% 的汇聚过程被凭空跳掉**，水滴直接出现在半路上，
+     * 看着就是"卡"了一下。让时钟跟着第一帧起步，这一段一点都不丢。
+     *
+     * 判断成 -1 而不是 0：RAF 给的时间戳有可能很接近 0，用 0 当哨兵会误判。
+     */
+    let start = -1;
 
     const frame = (now: number) => {
       if (cancelled) return;
+
+      if (start < 0) {
+        start = now;
+        // 动画总时长从这一帧算起，兜底时间跟着往后挪
+        window.clearTimeout(failsafe);
+        failsafe = window.setTimeout(finish, FAILSAFE_MS);
+      }
+
       const t = now - start;
 
       /**
