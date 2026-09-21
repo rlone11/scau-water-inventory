@@ -292,18 +292,16 @@ export default function LoginPage() {
             {/* paddingBottom 不是留白：按钮在最后一个，不给几像素下去，
                 聚焦时那圈 outline 会被上面的 overflow:hidden 切掉 */}
             <div ref={formBoxRef} style={{ paddingBottom: 4 }}>
-              {/* key 一换就整块重挂载，靠 initial 让新表单淡入 */}
-              <motion.div
-                key={mode}
-                initial={reduceMotion ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.2 }}
-              >
-                {/* introDone 见 DingTalkQrLogin 里的说明：SDK 必须等入场动画播完再加载 */}
-                {mode === 'dingtalk' && <DingTalkQrLogin onLoggedIn={goHome} introDone={!showIntro} />}
-                {mode === 'guest' && <GuestLoginForm onLoggedIn={goHome} />}
-                {mode === 'emergency' && <EmergencyLoginForm onLoggedIn={goHome} />}
-              </motion.div>
+              {/*
+                ⚠️ 表单**不做淡入**。以前这里包了一层 initial={{opacity:0}} 的
+                motion.div，新表单要从全透明淡进来 —— 那既是个多余的花样，
+                也容易被看成"闪一下"：旧表单是瞬间消失的，于是中间有一段
+                卡片发白、内容半透明的空窗。要的是"拉伸"，不是"淡入"。
+              */}
+              {/* introDone 见 DingTalkQrLogin 里的说明：SDK 必须等入场动画播完再加载 */}
+              {mode === 'dingtalk' && <DingTalkQrLogin onLoggedIn={goHome} introDone={!showIntro} />}
+              {mode === 'guest' && <GuestLoginForm onLoggedIn={goHome} />}
+              {mode === 'emergency' && <EmergencyLoginForm onLoggedIn={goHome} />}
             </div>
           </motion.div>
         </Card>
