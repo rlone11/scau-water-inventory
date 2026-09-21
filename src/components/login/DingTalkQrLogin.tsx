@@ -247,7 +247,7 @@ export default function DingTalkQrLogin({ onLoggedIn, introDone }: Props) {
         )}
       </div>
 
-      <div style={{ marginTop: 14, minHeight: 44 }}>
+      <div style={{ marginTop: 14 }}>
         {/* 中间留白太大时就一条细分割线，两端渐隐 —— 比空着好，也不抢戏 */}
         <div
           style={{
@@ -262,30 +262,45 @@ export default function DingTalkQrLogin({ onLoggedIn, introDone }: Props) {
           之前写成 rgba(255,255,255,…) 是在深色背景上才成立的写法，
           搬到卡片里就成了白底白字，完全看不见。
         */}
-        {phase === 'exchanging' && (
-          <Text style={{ color: '#0369A1' }}>
-            <Spin size="small" /> 正在验证身份…
-          </Text>
-        )}
 
-        {phase === 'ready' && (
-          <Text style={{ color: '#475569', fontSize: 13 }}>
-            请用<strong style={{ color: '#0C4A6E' }}>学院钉钉</strong>扫码登录
-            <br />
-            <span style={{ fontSize: 12, color: '#94A3B8' }}>
-              仅限本院钉钉组织成员，外部人员请用「我来借东西」
-            </span>
-          </Text>
-        )}
+        {/*
+          ⚠️ 这层 minHeight 是**固定的四十四像素**（= ready 那两行文案的高度），
+          不是随手写的下限，别删也别改小。
 
-        {phase === 'error' && (
-          <div style={{ textAlign: 'left' }}>
-            <Alert type="error" message={message} showIcon style={{ marginBottom: 8 }} />
-            <Button size="small" onClick={retry} block>
-              重试
-            </Button>
-          </div>
-        )}
+          加载中 / 已就绪 / 验证中三种状态必须占住同样的高度。之前只有一个
+          外层 minHeight:44，加载中实际只有分割线的 13px，等 SDK 加载完文案
+          一冒出来整块就长 13px —— 卡片当场跳一下；更要命的是登录页页签切换
+          的高度弹簧正好在这时候追一个**移动的目标**，回弹被整个抹平：实测
+          变高方向只剩 1px 过冲，变矮方向却有不正常的 11px。
+
+          只有报错会长出去，那是真该长 —— 弹簧会平滑地把它撑开。
+        */}
+        <div style={{ minHeight: 44 }}>
+          {phase === 'exchanging' && (
+            <Text style={{ color: '#0369A1' }}>
+              <Spin size="small" /> 正在验证身份…
+            </Text>
+          )}
+
+          {phase === 'ready' && (
+            <Text style={{ color: '#475569', fontSize: 13 }}>
+              请用<strong style={{ color: '#0C4A6E' }}>学院钉钉</strong>扫码登录
+              <br />
+              <span style={{ fontSize: 12, color: '#94A3B8' }}>
+                仅限本院钉钉组织成员，外部人员请用「我来借东西」
+              </span>
+            </Text>
+          )}
+
+          {phase === 'error' && (
+            <div style={{ textAlign: 'left' }}>
+              <Alert type="error" message={message} showIcon style={{ marginBottom: 8 }} />
+              <Button size="small" onClick={retry} block>
+                重试
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

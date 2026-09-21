@@ -18,3 +18,21 @@ export function entrySpring(stiffness: number) {
     damping: Math.ceil(2 * Math.sqrt(stiffness)),
   };
 }
+
+/**
+ * 切换类动画的弹簧：**刻意欠阻尼，要的就是那一下回弹**。
+ *
+ * ⚠️ 跟上面的 entrySpring 不一样是故意的，别"顺手统一"成临界阻尼 ——
+ * 入场动画过冲会被看成抖动（见上），而这一条用在**用户主动操作引发的形变**上：
+ * 点一下页签、卡片跟着弹一下，回弹本身就是操作反馈。把阻尼提到临界值，
+ * 切换会变得很"木"，用户要的「Q弹」就没了。
+ *
+ * ζ = d/(2√k) = 22/(2√300) ≈ 0.63 → 过冲约 7.6%。第二次过冲只剩 0.6%，
+ * 所以是「回弹一次即停」，不会来回荡。
+ * 按 170px 的卡片高度差算，大约冲过头 13px —— 看得出来，但不至于轻浮。
+ */
+export const toggleSpring = {
+  type: 'spring' as const,
+  stiffness: 300,
+  damping: 22,
+};

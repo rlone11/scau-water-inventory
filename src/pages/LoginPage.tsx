@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Card, Button, Segmented, Typography } from 'antd';
 import { useAuth } from '../contexts/AuthContext';
 import { LOGIN_GRADIENT, LOGIN_EMBLEM_ID } from '../theme';
+import { toggleSpring } from '../lib/motion';
 import LoginBackground from '../components/LoginBackground';
 import WaterIntro from '../components/login/WaterIntro';
 import DingTalkQrLogin from '../components/login/DingTalkQrLogin';
@@ -57,6 +58,28 @@ export default function LoginPage() {
   const { role, loading } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<LoginMode>('guest');
+
+  /**
+   * 表单区的高度。量出来喂给 motion，切换页签时卡片才会弹过去而不是跳过去。
+   * 见下面表单区那段 JSX 的说明。
+   */
+  const formBoxRef = useRef<HTMLDivElement>(null);
+  const [formHeight, setFormHeight] = useState<number>();
+  /** 系统里关了动画的人不该看到回弹 —— 跟 WaterIntro / LoginBackground 一个规矩 */
+  const reduceMotion = useRef(
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  ).current;
+
+  useEffect(() => {
+    const el = formBoxRef.current;
+    if (!el) return;
+    const measure = () => setFormHeight(el.offsetHeight);
+    measure();
+    // 内容自己变高变矮也要跟上（校验错误信息冒出来、二维码面板换成加载态等）
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // 拿不到 sessionStorage（隐私模式等）就不播动画，直接进登录页
   const [showIntro, setShowIntro] = useState(() => {
@@ -248,10 +271,37 @@ export default function LoginPage() {
             style={{ marginBottom: 20 }}
           />
 
-          {/* introDone 见 DingTalkQrLogin 里的说明：SDK 必须等入场动画播完再加载 */}
-          {mode === 'dingtalk' && <DingTalkQrLogin onLoggedIn={goHome} introDone={!showIntro} />}
-          {mode === 'guest' && <GuestLoginForm onLoggedIn={goHome} />}
-          {mode === 'emergency' && <EmergencyLoginForm onLoggedIn={goHome} />}
+          {/*
+            ⚠️ 表单区外面这层是给「切换页签」用的，别拆。
+
+            三个表单高矮差很多（二维码面板 280px，访客表单不到一半），而卡片是
+            **垂直居中**的 —— 高度直接突变，整张卡片连同院徽、标题会一起跳位，
+            切换看着就很生硬。这里把内容的真实高度量出来喂给 motion，
+            让它用 toggleSpring 弹过去；overflow:hidden 则让新表单是被"撑开"
+            露出来的，而不是凭空冒出来。
+          */}
+          <motion.div
+            animate={formHeight === undefined ? {} : { height: formHeight }}
+            transition={reduceMotion ? { duration: 0 } : toggleSpring}
+            style={{ overflow: 'hidden' }}
+          >
+            {/* paddingBottom 不是留白：按钮在最后一个，不给几像素下去，
+                聚焦时那圈 outline 会被上面的 overflow:hidden 切掉 */}
+            <div ref={formBoxRef} style={{ paddingBottom: 4 }}>
+              {/* key 一换就整块重挂载，靠 initial 让新表单淡入 */}
+              <motion.div
+                key={mode}
+                initial={reduceMotion ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.2 }}
+              >
+                {/* introDone 见 DingTalkQrLogin 里的说明：SDK 必须等入场动画播完再加载 */}
+                {mode === 'dingtalk' && <DingTalkQrLogin onLoggedIn={goHome} introDone={!showIntro} />}
+                {mode === 'guest' && <GuestLoginForm onLoggedIn={goHome} />}
+                {mode === 'emergency' && <EmergencyLoginForm onLoggedIn={goHome} />}
+              </motion.div>
+            </div>
+          </motion.div>
         </Card>
 
         <div style={{ textAlign: 'center', marginTop: 16 }}>
