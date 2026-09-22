@@ -7,7 +7,8 @@ import { LOGIN_GRADIENT, LOGIN_EMBLEM_ID } from '../theme';
 import { toggleTransition } from '../lib/motion';
 import LoginBackground from '../components/LoginBackground';
 import WaterIntro from '../components/login/WaterIntro';
-import DingTalkQrLogin from '../components/login/DingTalkQrLogin';
+import DingTalkLogin from '../components/login/DingTalkLogin';
+import { peekStashedCallback } from '../lib/dingtalkRedirect';
 import GuestLoginForm from '../components/login/GuestLoginForm';
 import EmergencyLoginForm from '../components/login/EmergencyLoginForm';
 
@@ -44,9 +45,10 @@ const floatingDrops = [
  *
  * 两条主路，**默认落在 ①**：
  *   ① 我来借东西   —— 外部借用人，不验证，只记姓名电话
- *   ② 学院管理人员 —— 钉钉扫码，拿到真身份，权限看 staff_roles 里的角色
+ *   ② 学院管理人员 —— 钉钉登录，拿到真身份，权限看 staff_roles 里的角色
  * 来借东西的人比管理员多得多，所以默认给 ①。顺带一个好处：钉钉 SDK 只挂在
- * ② 的组件里，访客不切过去就一个字节都不会加载。
+ * ② 的组件里，访客不切过去就一个字节都不会加载；手机端连 ② 都不加载它
+ * （扫不了自己屏幕上的码，改走整页跳转授权，见 DingTalkLogin）。
  * 外加一个平时不用的应急入口（钉钉整个链路断掉时还能进后台）。
  *
  * 2026-09-20 之前这里是一个硬编码密码 `0313`。真正的门现在在数据库 RLS 上，
@@ -57,7 +59,18 @@ type LoginMode = 'dingtalk' | 'guest' | 'emergency';
 export default function LoginPage() {
   const { role, loading } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<LoginMode>('guest');
+
+  /**
+   * ⚠️ 从钉钉授权跳回来的人必须**直接落在钉钉页签**上。
+   *
+   * 钉钉面板是懒挂载的（见下面 hasMountedDingtalk），默认那个「我来借东西」
+   * 页签根本不会挂载它 —— 回跳带回来的 authCode 就永远没人消费，
+   * 用户看到的是「授权完跳回来，什么都没发生」。2026-09-22 加手机端跳转授权
+   * 时踩到的，不是理论风险。
+   */
+  const [mode, setMode] = useState<LoginMode>(() =>
+    peekStashedCallback() ? 'dingtalk' : 'guest',
+  );
 
   /**
    * 钉钉那块**一旦挂上就不再卸载**（懒挂载 + 常驻），原因写在表单区 JSX 里。
@@ -330,8 +343,8 @@ export default function LoginPage() {
               */}
               {hasMountedDingtalk.current && (
                 <div style={{ display: mode === 'dingtalk' ? 'block' : 'none' }}>
-                  {/* introDone 见 DingTalkQrLogin 里的说明：SDK 必须等入场动画播完再加载 */}
-                  <DingTalkQrLogin onLoggedIn={goHome} introDone={!showIntro} />
+                  {/* introDone 见 DingTalkLogin 里的说明：SDK 必须等入场动画播完再加载 */}
+                  <DingTalkLogin onLoggedIn={goHome} introDone={!showIntro} />
                 </div>
               )}
 
