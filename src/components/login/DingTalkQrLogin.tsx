@@ -1,0 +1,307 @@
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Button, Spin, Typography } from 'antd';
+import { supabase } from '../../lib/supabase';
+import { DINGTALK_CLIENT_ID, DINGTALK_SDK_URL, dingtalkRedirectUri } from '../../lib/dingtalk';
+
+const { Text } = Typography;
+
+interface DTLoginResult {
+  redirectUrl: string;
+  authCode: string;
+  state?: string;
+}
+
+declare global {
+  interface Window {
+    DTFrameLogin?: (
+      frameParams: { id: string; width?: number; height?: number },
+      loginParams: Record<string, string>,
+      successCbk: (result: DTLoginResult) => void,
+      errorCbk?: (errorMsg: string) => void,
+    ) => void;
+  }
+}
+
+const CONTAINER_ID = 'dingtalk-qr-container';
+
+/**
+ * ⚠️ 已消费过的 authCode，模块级存。
+ *
+ * 两个原因必须放在模块级而不是组件里：
+ *   1. 钉钉这个 SDK 有**重复触发回调**的已知问题（内部反复添加 message 监听）
+ *   2. 登录页切到别的入口再切回来会重新挂载组件，旧的监听器还在
+ * authCode 是一次性的，被消费第二次必然失败 —— 那会把一次本来成功的登录
+ * 变成一条吓人的报错。所以在最外层拦掉。
+ */
+const consumedAuthCodes = new Set<string>();
+
+/** 脚本只加载一次；并发挂载共用同一个 Promise */
+let sdkPromise: Promise<void> | null = null;
+
+function loadSdk(): Promise<void> {
+  if (window.DTFrameLogin) return Promise.resolve();
+  if (!sdkPromise) {
+    sdkPromise = new Promise<void>((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = DINGTALK_SDK_URL;
+      script.onload = () => resolve();
+      script.onerror = () => {
+        sdkPromise = null; // 允许重试
+        reject(new Error('钉钉登录组件加载失败，请检查网络后重试'));
+      };
+      document.body.appendChild(script);
+    });
+  }
+  return sdkPromise;
+}
+
+/**
+ * 拿 authCode 去换一组可以登录的凭据。
+ *
+ * 这里刻意用 fetch 而不是 supabase.functions.invoke —— 后者把非 2xx 响应
+ * 包成一个 FunctionsHttpError，要看服务端返回的中文错误还得从 context 里刨，
+ * 而登录失败时「到底哪一步错了」恰恰是用户最需要看到的。
+ */
+async function exchangeAuthCode(authCode: string): Promise<{ email: string; password: string }> {
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dingtalk-login`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ authCode }),
+  });
+
+  const payload = await res.json().catch(() => null);
+  if (!res.ok || !payload?.ok) {
+    throw new Error(payload?.error ?? `换取登录凭据失败（HTTP ${res.status}）`);
+  }
+  return { email: payload.email, password: payload.password };
+}
+
+interface Props {
+  /** 登录成功（会话已建立）时调用 */
+  onLoggedIn: () => void;
+  /**
+   * 入场动画是否已经结束。**必须等它变成 true 才允许加载钉钉 SDK。**
+   *
+   * ⚠️ 这条不是优化，是必需的（2026-09-21 加的）。
+   *
+   * 钉钉 SDK 挂载后会异步拉起第二波活儿：再拉一个 login.js 解析执行（~82ms），
+   * 以及一个阿里云埋点 XHR 的回调（~110ms）。实测这两下正好砸在入场动画
+   * 「汇聚」播到一半的位置，主线程被占住 74~83ms —— 用户看到的就是
+   * 「粒子飞着飞着猛卡一下」。A/B 实测：把 SDK 推迟 8 秒，汇聚期间掉帧数归零。
+   *
+   * 这个 SDK 只服务登录页，等动画播完再加载没有任何代价。
+   */
+  introDone: boolean;
+}
+
+export default function DingTalkQrLogin({ onLoggedIn, introDone }: Props) {
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'exchanging' | 'error'>('loading');
+  const [message, setMessage] = useState('');
+  const [attempt, setAttempt] = useState(0);
+
+  const initedRef = useRef(false);
+  /** 只防同一次失败：重试按钮会把它复位 */
+  const stateRef = useRef('');
+
+  useEffect(() => {
+    /**
+     * ⚠️ 入场动画还在播的时候，这里什么都不做 —— 一个字节的 SDK 都不去动。
+     * 依赖里有 introDone，等它变成 true 这个 effect 会重跑，那时才开始初始化。
+     * 动画没播（sessionStorage 里已标记 / 用户关了动画）时 introDone 一开始就是
+     * true，行为跟以前完全一样。
+     */
+    if (!introDone) return;
+
+    let alive = true;
+
+    const handle = async (result: DTLoginResult) => {
+      const authCode = result?.authCode;
+      if (!authCode) return;
+
+      // 一次性校验：state 由我们生成，钉钉原样回传
+      if (stateRef.current && result.state && result.state !== stateRef.current) {
+        setPhase('error');
+        setMessage('登录校验失败（state 不匹配），请重试');
+        return;
+      }
+
+      if (consumedAuthCodes.has(authCode)) return;
+      consumedAuthCodes.add(authCode);
+
+      setPhase('exchanging');
+      try {
+        const { email, password } = await exchangeAuthCode(authCode);
+
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw new Error(`建立会话失败：${error.message}`);
+
+        if (alive) onLoggedIn();
+      } catch (e) {
+        if (!alive) return;
+        setPhase('error');
+        setMessage(e instanceof Error ? e.message : String(e));
+      }
+    };
+
+    const init = async () => {
+      if (initedRef.current) return;
+      initedRef.current = true;
+
+      try {
+        await loadSdk();
+        if (!alive) return;
+
+        if (typeof window.DTFrameLogin !== 'function') {
+          throw new Error('钉钉登录组件未能正确初始化');
+        }
+
+        stateRef.current = `scau-${Math.random().toString(36).slice(2, 12)}`;
+
+        window.DTFrameLogin(
+          { id: CONTAINER_ID, width: 280, height: 280 },
+          {
+            // redirect_uri 必须 encodeURIComponent 后再传
+            redirect_uri: encodeURIComponent(dingtalkRedirectUri()),
+            client_id: DINGTALK_CLIENT_ID,
+            scope: 'openid',
+            response_type: 'code',
+            prompt: 'consent',
+            state: stateRef.current,
+          },
+          (result) => void handle(result),
+          (errMsg) => {
+            if (!alive) return;
+            setPhase('error');
+            setMessage(errMsg || '钉钉扫码失败');
+          },
+        );
+
+        if (alive) setPhase('ready');
+      } catch (e) {
+        if (!alive) return;
+        setPhase('error');
+        setMessage(e instanceof Error ? e.message : String(e));
+      }
+    };
+
+    void init();
+
+    return () => {
+      alive = false;
+    };
+    // attempt 变化时整个重建（重试）；introDone 由 false 变 true 时补上第一次初始化
+  }, [attempt, onLoggedIn, introDone]);
+
+  const retry = () => {
+    initedRef.current = false;
+    setMessage('');
+    setPhase('loading');
+    setAttempt((n) => n + 1);
+  };
+
+  return (
+    <div style={{ textAlign: 'center' }}>
+      {/*
+        ⚠️ 这个 div 整块让给钉钉 SDK，React 绝不往里面放子节点。
+
+        钉钉初始化时会清空容器再塞自己的 iframe。如果里面原本有 React 管理的
+        节点，那个节点会被从 DOM 里抹掉；之后 React 按自己的账本去删它，就会抛
+        NotFoundError（Failed to execute 'removeChild'），整棵树跟着卸载 ——
+        用户看到的就是「闪一下然后白屏」。
+
+        加载圈改成绝对定位的兄弟节点盖在上面，不碰这个容器。
+      */}
+      <div style={{ position: 'relative', width: 280, height: 280, margin: '0 auto' }}>
+        <div
+          id={CONTAINER_ID}
+          style={{
+            width: '100%',
+            height: '100%',
+            background: '#fff',
+            borderRadius: 14,
+            // 加圈描边和浅投影，让二维码成为一块有边界的"面板"。
+            // 之前它和卡片都是白的，边界看不见，整块显得空
+            border: '1px solid rgba(14,165,233,0.18)',
+            boxShadow: '0 2px 10px rgba(3,105,161,0.07)',
+            overflow: 'hidden',
+          }}
+        />
+        {phase === 'loading' && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#fff',
+              borderRadius: 12,
+            }}
+          >
+            <Spin />
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        {/* 中间留白太大时就一条细分割线，两端渐隐 —— 比空着好，也不抢戏 */}
+        <div
+          style={{
+            height: 1,
+            marginBottom: 12,
+            background:
+              'linear-gradient(90deg, transparent, rgba(14,165,233,0.28), transparent)',
+          }}
+        />
+        {/*
+          ⚠️ 这里是**白卡片**，文字必须用深色。
+          之前写成 rgba(255,255,255,…) 是在深色背景上才成立的写法，
+          搬到卡片里就成了白底白字，完全看不见。
+        */}
+
+        {/*
+          ⚠️ 这层 minHeight 是**固定的四十四像素**（= ready 那两行文案的高度），
+          不是随手写的下限，别删也别改小。
+
+          加载中 / 已就绪 / 验证中三种状态必须占住同样的高度。之前只有一个
+          外层 minHeight:44，加载中实际只有分割线的 13px，等 SDK 加载完文案
+          一冒出来整块就长 13px —— 卡片当场跳一下；更要命的是登录页页签切换
+          的高度弹簧正好在这时候追一个**移动的目标**，回弹被整个抹平：实测
+          变高方向只剩 1px 过冲，变矮方向却有不正常的 11px。
+
+          只有报错会长出去，那是真该长 —— 弹簧会平滑地把它撑开。
+        */}
+        <div style={{ minHeight: 44 }}>
+          {phase === 'exchanging' && (
+            <Text style={{ color: '#0369A1' }}>
+              <Spin size="small" /> 正在验证身份…
+            </Text>
+          )}
+
+          {phase === 'ready' && (
+            <Text style={{ color: '#475569', fontSize: 13 }}>
+              请用<strong style={{ color: '#0C4A6E' }}>学院钉钉</strong>扫码登录
+              <br />
+              <span style={{ fontSize: 12, color: '#94A3B8' }}>
+                仅限本院钉钉组织成员，外部人员请用「我来借东西」
+              </span>
+            </Text>
+          )}
+
+          {phase === 'error' && (
+            <div style={{ textAlign: 'left' }}>
+              <Alert type="error" message={message} showIcon style={{ marginBottom: 8 }} />
+              <Button size="small" onClick={retry} block>
+                重试
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

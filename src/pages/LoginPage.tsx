@@ -1,16 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Card, Button, Segmented, Typography } from 'antd';
+import { Card, Segmented, Typography } from 'antd';
 import { useAuth } from '../contexts/AuthContext';
 import { LOGIN_GRADIENT, LOGIN_EMBLEM_ID } from '../theme';
 import { toggleTransition } from '../lib/motion';
 import LoginBackground from '../components/LoginBackground';
 import WaterIntro from '../components/login/WaterIntro';
-import DingTalkLogin from '../components/login/DingTalkLogin';
-import { peekStashedCallback } from '../lib/dingtalkRedirect';
+import DingTalkQrLogin from '../components/login/DingTalkQrLogin';
 import GuestLoginForm from '../components/login/GuestLoginForm';
-import EmergencyLoginForm from '../components/login/EmergencyLoginForm';
+import AccountLoginForm from '../components/login/AccountLoginForm';
 
 const { Title, Text } = Typography;
 
@@ -41,36 +40,53 @@ const floatingDrops = [
 ];
 
 /**
+ * 这台设备是不是**手机**。
+ *
+ * ⚠️ 这是**设备能力**判断，不是窗口宽度 —— 两者的区别见项目里那条响应式约定。
+ * 依据很直接：手机**扫不了自己屏幕上的码**，所以手机端干脆不显示钉钉页签，
+ * 只留「我来借东西」和「管理员账号」。
+ * 拿"把浏览器窗口拖窄"来测这个分支是测不出来的，得开 F12 的设备模拟或上真机。
+ *
+ * 平板（iPad / 安卓平板 UA 里没有 Mobile）**保持显示钉钉页签** —— 平板能拿另一台
+ * 手机扫屏幕上的码。
+ */
+function isPhone(): boolean {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPod|Windows Phone/i.test(ua)) return true;
+  if (/Android/i.test(ua) && /Mobile/i.test(ua)) return true;
+  if (/HarmonyOS/i.test(ua) && /Mobile/i.test(ua)) return true;
+  return false;
+}
+
+/** 一次页面生命周期里 UA 不会变 */
+const IS_PHONE = isPhone();
+
+/**
  * 登录页 —— 从「管理员密码框」改成「身份分流」。
  *
- * 两条主路，**默认落在 ①**：
+ * 三条路，**默认落在 ①**：
  *   ① 我来借东西   —— 外部借用人，不验证，只记姓名电话
- *   ② 学院管理人员 —— 钉钉登录，拿到真身份，权限看 staff_roles 里的角色
+ *   ② 学院管理人员 —— 钉钉扫码，拿到真身份，权限看 staff_roles 里的角色（**仅桌面**）
+ *   ③ 管理员账号   —— 邮箱 + 密码，学院把账号发给谁谁就能用（桌面手机都有）
  * 来借东西的人比管理员多得多，所以默认给 ①。顺带一个好处：钉钉 SDK 只挂在
- * ② 的组件里，访客不切过去就一个字节都不会加载；手机端连 ② 都不加载它
- * （扫不了自己屏幕上的码，改走整页跳转授权，见 DingTalkLogin）。
- * 外加一个平时不用的应急入口（钉钉整个链路断掉时还能进后台）。
+ * ② 的组件里，访客不切过去就一个字节都不会加载；手机端根本没有 ②，
+ * 那一整个 SDK 永远不下载。
+ *
+ * ⚠️ 手机端**没有钉钉这条路**，是踩过坑才定下来的（2026-09-22）：手机上扫不了
+ * 自己屏幕上的码；改走「整页跳转授权 + 唤起钉钉 App」也做通过一轮，App 能拉起、
+ * 授权也能成，但**回跳会落在钉钉 App 内置的浏览器里**，跟发起时不是同一个容器，
+ * 本地存的 state 全读不到 —— 硬拦就永远登不进去。绕不过去，索性让管理员用账号密码。
  *
  * 2026-09-20 之前这里是一个硬编码密码 `0313`。真正的门现在在数据库 RLS 上，
  * 所以这一页只是分流器 —— 就算有人绕过它，也读不到任何数据。
  */
-type LoginMode = 'dingtalk' | 'guest' | 'emergency';
+type LoginMode = 'dingtalk' | 'guest' | 'account';
 
 export default function LoginPage() {
   const { role, loading } = useAuth();
   const navigate = useNavigate();
 
-  /**
-   * ⚠️ 从钉钉授权跳回来的人必须**直接落在钉钉页签**上。
-   *
-   * 钉钉面板是懒挂载的（见下面 hasMountedDingtalk），默认那个「我来借东西」
-   * 页签根本不会挂载它 —— 回跳带回来的 authCode 就永远没人消费，
-   * 用户看到的是「授权完跳回来，什么都没发生」。2026-09-22 加手机端跳转授权
-   * 时踩到的，不是理论风险。
-   */
-  const [mode, setMode] = useState<LoginMode>(() =>
-    peekStashedCallback() ? 'dingtalk' : 'guest',
-  );
+  const [mode, setMode] = useState<LoginMode>('guest');
 
   /**
    * 钉钉那块**一旦挂上就不再卸载**（懒挂载 + 常驻），原因写在表单区 JSX 里。
@@ -292,11 +308,13 @@ export default function LoginPage() {
           />
           <Segmented
             block
-            value={mode === 'emergency' ? 'dingtalk' : mode}
+            value={mode}
             onChange={(v) => setMode(v as LoginMode)}
             options={[
               { label: '我来借东西', value: 'guest' },
-              { label: '学院管理人员', value: 'dingtalk' },
+              // 手机端不给这一栏：扫不了自己屏幕上的码，摆着只会让人反复试
+              ...(IS_PHONE ? [] : [{ label: '学院管理人员', value: 'dingtalk' }]),
+              { label: '管理员账号', value: 'account' },
             ]}
             style={{ marginBottom: 20 }}
           />
@@ -343,33 +361,17 @@ export default function LoginPage() {
               */}
               {hasMountedDingtalk.current && (
                 <div style={{ display: mode === 'dingtalk' ? 'block' : 'none' }}>
-                  {/* introDone 见 DingTalkLogin 里的说明：SDK 必须等入场动画播完再加载 */}
-                  <DingTalkLogin onLoggedIn={goHome} introDone={!showIntro} />
+                  {/* introDone 见 DingTalkQrLogin 里的说明：SDK 必须等入场动画播完再加载 */}
+                  <DingTalkQrLogin onLoggedIn={goHome} introDone={!showIntro} />
                 </div>
               )}
 
               {mode === 'guest' && <GuestLoginForm onLoggedIn={goHome} />}
-              {mode === 'emergency' && <EmergencyLoginForm onLoggedIn={goHome} />}
+              {mode === 'account' && <AccountLoginForm onLoggedIn={goHome} />}
             </div>
           </motion.div>
         </Card>
 
-        <div style={{ textAlign: 'center', marginTop: 16 }}>
-          {mode === 'emergency' ? (
-            <Button type="link" onClick={() => setMode('dingtalk')} style={{ color: 'rgba(255,255,255,0.85)' }}>
-              返回钉钉登录
-            </Button>
-          ) : (
-            /* 0.35 的实际观感几乎看不见 —— 底色是中等蓝，白字得够亮才读得出来 */
-            <Button
-              type="link"
-              onClick={() => setMode('emergency')}
-              style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12 }}
-            >
-              钉钉无法登录？应急入口
-            </Button>
-          )}
-        </div>
       </motion.div>
 
       {/*

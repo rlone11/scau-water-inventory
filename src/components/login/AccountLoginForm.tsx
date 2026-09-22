@@ -6,17 +6,24 @@ import { supabase } from '../../lib/supabase';
 const { Text } = Typography;
 
 /**
- * 应急入口 —— 钉钉链路整个断掉时（回调域名失效、权限被撤、应用被停用）
- * 靠它还能进管理后台。平时不用。
+ * 管理员账号登录 —— 邮箱 + 密码。
  *
- * 账号在 Supabase 后台手工开（Authentication → Users），密码由你自己设，
- * 不走钉钉、也不存在任何硬编码。
+ * 2026-09-22 从「应急入口」升成正经入口：手机端那套钉钉跳转授权做下来
+ * 太绕（要唤醒 App、回跳还会换浏览器容器），干脆让管理员用账号密码，
+ * 谁要就给谁开一个 —— 比走钉钉省事，也不受手机端各种限制。
+ *
+ * 账号怎么建：双击仓库根目录的「建应急账号.command」，**一个人跑一次**。
+ * 邮箱不用真能收信，它只是个账号名；脚本会自动给账号带上 admin 权限
+ * （写进 app_metadata.scau_role，数据库 RLS 认的就是这个字段）。
+ *
+ * ⚠️ 密码只经 supabase.auth.signInWithPassword，前端不存密码、不做任何硬编码
+ * —— 2026-09-20 之前那个硬编码的 `0313` 就是这么被拿掉的。
  */
 interface Props {
   onLoggedIn: () => void;
 }
 
-export default function EmergencyLoginForm({ onLoggedIn }: Props) {
+export default function AccountLoginForm({ onLoggedIn }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -51,7 +58,7 @@ export default function EmergencyLoginForm({ onLoggedIn }: Props) {
           marginBottom: 16,
         }}
       >
-        仅限钉钉无法登录时使用
+        用学院分配给你的账号登录
       </Text>
 
       {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 12 }} />}
