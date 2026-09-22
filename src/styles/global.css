@@ -10,24 +10,38 @@
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
-  /*
-    ⚠️ 这条是必需的，别删。
+}
 
-    登录页切到「学院管理人员」时，二维码面板把页面撑高约 17px。窗口稍矮一点
-    （笔记本上很常见）就跨过视口高度 —— **滚动条突然出现，内容区宽度少 7px**，
-    居中的卡片横跳、文字重新折行。用户的原话「不丝滑 / 停的时候一顿一顿」
-    就是它，跟动画曲线无关。
+/*
+  ===== 登录页自己的滚动区 =====
 
-    让滚动条**一直在**，宽度就永远不变：访客态和管理端态都实测 893/247。
+  登录页的高度是会变的：切到「学院管理人员」，二维码面板会把内容撑高约 17px。
+  页面稍矮一点（笔记本上很常见）就跨过视口 —— **右侧突然冒出一条 7px 滚动条，
+  内容区变窄、居中的卡片横跳、文字重新折行**。用户的原话是「不丝滑 / 停的时候
+  一顿一顿」，根子在这儿，跟动画曲线无关。
 
-    ⚠️ 别改成 scrollbar-gutter: stable —— 在这里**完全没用**，实测三组写法
-    （html 上、加 overflow-y:auto、body 上）访客态都还是 900/250，
-    多半是被下面那条自定义 ::-webkit-scrollbar 顶掉了。只有
-    overflow-y: scroll 真正管用。
+  修法：让登录页自己占满视口高度、自己消化溢出。html 就永远不会溢出，
+  **右侧那条滚动条根本不会出现**；内部这条又整个隐藏掉（连占位都不占），
+  所以窗口再矮也不会横跳，而且照样能用滚轮滚到下面的内容。
 
-    代价：右侧长期有一条 7px 的滚动条槽位（内容区窄 7px）。值得。
-  */
-  overflow-y: scroll;
+  ⚠️ 试过但没用的写法（都实测过，别重走）：
+    html { scrollbar-gutter: stable }            → 访客态仍然 900/250
+    html { overflow-y: auto; ... }               → 同上
+    多半是被下面那条自定义 ::-webkit-scrollbar 顶掉了，别照搬网上的说法。
+    html { overflow-y: scroll }（让滚动条一直在）→ 确实不跳，但用户明确说
+    「登录界面别再出现右侧滚动条了」，所以否掉。
+*/
+.login-viewport {
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Firefox */
+  scrollbar-width: none;
+}
+
+/* Chromium / Safari：隐藏且**不占位**，这是不横跳的关键 */
+.login-viewport::-webkit-scrollbar {
+  display: none;
 }
 
 body {

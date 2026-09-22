@@ -60,6 +60,16 @@ export default function LoginPage() {
   const [mode, setMode] = useState<LoginMode>('guest');
 
   /**
+   * 钉钉那块**一旦挂上就不再卸载**（懒挂载 + 常驻），原因写在表单区 JSX 里。
+   *
+   * 用 ref 而不是 state 是在**同一次渲染里**就要生效：用 state 的话，第一次
+   * 点「学院管理人员」会先渲染出一帧空白，再补上内容 —— 那一下就是闪。
+   * 这是个只进不退的闩，渲染期赋值是幂等的，不影响渲染结果。
+   */
+  const hasMountedDingtalk = useRef(mode === 'dingtalk');
+  if (mode === 'dingtalk') hasMountedDingtalk.current = true;
+
+  /**
    * 表单区的高度。量出来喂给 motion，切换页签时卡片才会弹过去而不是跳过去。
    * 见下面表单区那段 JSX 的说明。
    */
@@ -113,15 +123,21 @@ export default function LoginPage() {
 
   return (
     <div
+      /*
+        ⚠️ 登录页自己就是滚动区（.login-viewport，见 global.css），别再写
+        minHeight: 100vh —— 那样内容一撑高 html 就溢出，右侧会冒出滚动条，
+        整页跟着横跳（用户的原话「不丝滑 / 停的时候一顿一顿」）。
+
+        也**不能用 alignItems: center 居中**：flex 居中 + 溢出时，内容顶部会
+        跑到滚不到的地方。改成让下面那张卡片用 margin: auto 居中，这样
+        窗口高时居中、窗口矮时从顶部开始排，怎么都够得着。
+      */
+      className="login-viewport"
       style={{
-        minHeight: '100vh',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
         background: LOGIN_GRADIENT,
         padding: 16,
         position: 'relative',
-        overflow: 'hidden',
       }}
     >
       <LoginBackground />
@@ -184,7 +200,8 @@ export default function LoginPage() {
         initial={{ opacity: 0, y: 30, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-        style={{ width: '100%', maxWidth: 400, position: 'relative', zIndex: 1 }}
+        /* margin: auto 居中（不是 flex 居中）—— 见外层 div 上的说明 */
+        style={{ width: '100%', maxWidth: 400, margin: 'auto', position: 'relative', zIndex: 1 }}
       >
         {/* 院徽与标题 */}
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
@@ -298,8 +315,26 @@ export default function LoginPage() {
                 也容易被看成"闪一下"：旧表单是瞬间消失的，于是中间有一段
                 卡片发白、内容半透明的空窗。要的是"拉伸"，不是"淡入"。
               */}
-              {/* introDone 见 DingTalkQrLogin 里的说明：SDK 必须等入场动画播完再加载 */}
-              {mode === 'dingtalk' && <DingTalkQrLogin onLoggedIn={goHome} introDone={!showIntro} />}
+              {/*
+                ⚠️ 钉钉这块**一旦挂上就不再卸载**，切走只是 display:none，别改回
+                `mode === 'dingtalk' && <DingTalkQrLogin/>`。
+
+                卸载会让 SDK 每次切回来都重新初始化：重建二维码 iframe、重跑
+                login.js、再打一次阿里云埋点的 XHR。实测每次切到管理端，主线程
+                要阻塞 109~184ms、掉帧 83~117ms；而切回访客是干干净净的 ——
+                用户的原话就是「只有切到那个页面才会卡，切回来都不会」。
+                保持挂载之后这个不对称就没了。
+
+                外面这层 display 是懒挂载：没点过管理端页签的人，SDK 一个字节
+                都不下载（见上面 hasMountedDingtalk 的说明）。
+              */}
+              {hasMountedDingtalk.current && (
+                <div style={{ display: mode === 'dingtalk' ? 'block' : 'none' }}>
+                  {/* introDone 见 DingTalkQrLogin 里的说明：SDK 必须等入场动画播完再加载 */}
+                  <DingTalkQrLogin onLoggedIn={goHome} introDone={!showIntro} />
+                </div>
+              )}
+
               {mode === 'guest' && <GuestLoginForm onLoggedIn={goHome} />}
               {mode === 'emergency' && <EmergencyLoginForm onLoggedIn={goHome} />}
             </div>
