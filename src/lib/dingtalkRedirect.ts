@@ -146,6 +146,33 @@ export function buildDingTalkAuthUrl(state: string): string {
   return `${AUTH_URL}?${params.toString()}`;
 }
 
+/**
+ * 现在这页是不是跑在钉钉 App 里。
+ *
+ * 钉钉容器（iOS/安卓/桌面）的 UA 里都带 `DingTalk`。已经在里面了就别再
+ * 多此一举去唤起 App。
+ */
+export function isInDingTalk(): boolean {
+  return /DingTalk|AliApp\(DingTalk/i.test(navigator.userAgent);
+}
+
+/**
+ * 让**钉钉 App 自己**打开这个地址 —— 钉钉统一跳转协议。
+ *
+ * ⚠️ 为什么非要绕这一下：手机浏览器直接开 `login.dingtalk.com/oauth2/auth`，
+ * 钉钉渲染的是**网页版登录页**（顶上账号密码表单），用户以为走错站了。
+ * 那一页其实自带「使用APP授权快速登录 / 打开」按钮，但它在最底下，没人看得到。
+ * 用这个协议把地址交给钉钉 App，App 里已经登录着，直接就是授权确认。
+ *
+ * ⚠️ 官方明确要求：url 参数**必须 urlencode**（见「设置快捷入口 URL」「消息链接说明」）。
+ *
+ * ⚠️ 那条「打开」按钮内部走的是 `mobile_local_confirm.htm` + 一个当场换的
+ * 一次性 code，钉钉没有公开文档 —— **不能照抄**，钉钉一改就会静默挂掉。
+ */
+export function buildDingTalkAppUrl(webUrl: string): string {
+  return `dingtalk://dingtalkclient/page/link?url=${encodeURIComponent(webUrl)}`;
+}
+
 // ────────────────────────────────────────────── 回跳之后
 
 /**

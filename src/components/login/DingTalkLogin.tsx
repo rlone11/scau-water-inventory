@@ -4,7 +4,9 @@ import { DingtalkOutlined } from '@ant-design/icons';
 import { supabase } from '../../lib/supabase';
 import { isFreshAuthCode, mountQrLogin } from '../../lib/dingtalkQrSdk';
 import {
+  buildDingTalkAppUrl,
   buildDingTalkAuthUrl,
+  isInDingTalk,
   isPhone,
   newState,
   rememberPendingState,
@@ -215,13 +217,44 @@ export default function DingTalkLogin({ onLoggedIn, introDone }: Props) {
     setAttempt((n) => n + 1);
   };
 
-  /** 手机端：整页跳到钉钉授权页 */
-  const startRedirect = () => {
+  /**
+   * 手机端：先去唤起钉钉 App，唤不起来再退回网页授权。
+   *
+   * ⚠️ 不能直接跳授权网址了事。手机浏览器打开 `login.dingtalk.com/oauth2/auth`
+   * 时钉钉渲染的是**网页版登录页**，顶上就是个账号密码表单 —— 用户的原话是
+   * 「怎么跳转到钉钉官网了」，看一眼就退出来了（那一页最底下其实有
+   * 「使用APP授权快速登录 / 打开」，但没人会往下看）。
+   *
+   * 所以先用统一跳转协议把地址交给钉钉 App：App 里本来就登录着，进去就是
+   * 授权确认页。已经在钉钉里打开的（从聊天/工作台点的链接）就不用绕了。
+   *
+   * ⚠️ 唤起 App 时页面会转后台。给 1.8 秒，没转就说明没唤起（没装钉钉、
+   * 或者被浏览器拦了），退回网页授权 —— 那条路本身是通的，别把人卡死。
+   * 整页跳走而不是开新标签：回跳才会落回这个标签页，返回键也能回到登录页。
+   */
+  const startMobileLogin = () => {
     const state = newState();
     rememberPendingState(state);
-    // 整页跳走，**不要**开新标签 —— 回跳才会落回这个标签页，
-    // 用户按返回键也能回到登录页
-    window.location.assign(buildDingTalkAuthUrl(state));
+
+    const webUrl = buildDingTalkAuthUrl(state);
+    if (isInDingTalk()) {
+      window.location.assign(webUrl);
+      return;
+    }
+
+    const fallback = window.setTimeout(() => {
+      if (!document.hidden) window.location.assign(webUrl);
+    }, 1800);
+    document.addEventListener(
+      'visibilitychange',
+      () => {
+        // 转后台 = 钉钉 App 起来了，别再把人也拽回网页
+        if (document.hidden) window.clearTimeout(fallback);
+      },
+      { once: true },
+    );
+
+    window.location.assign(buildDingTalkAppUrl(webUrl));
   };
 
   // ── 手机端面板：一个按钮，就这么多
@@ -259,7 +292,7 @@ export default function DingTalkLogin({ onLoggedIn, introDone }: Props) {
                 size="large"
                 block
                 icon={<DingtalkOutlined />}
-                onClick={startRedirect}
+                onClick={startMobileLogin}
               >
                 用钉钉 App 登录
               </Button>
@@ -268,7 +301,7 @@ export default function DingTalkLogin({ onLoggedIn, introDone }: Props) {
                 是深色背景才成立的写法，搬到卡片里就成了白底白字。
               */}
               <div style={{ marginTop: 12, fontSize: 12, color: '#94A3B8', lineHeight: 1.7 }}>
-                会跳到钉钉完成授权，再自动回到这里
+                会打开钉钉 App 完成授权，再自动回到这里
                 <br />
                 仅限本院钉钉组织成员，外部人员请用「我来借东西」
               </div>
