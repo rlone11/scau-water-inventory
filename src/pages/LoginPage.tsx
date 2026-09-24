@@ -5,6 +5,7 @@ import { Card, Segmented, Typography } from 'antd';
 import { useAuth } from '../contexts/AuthContext';
 import { LOGIN_GRADIENT, LOGIN_EMBLEM_ID } from '../theme';
 import { toggleTransition } from '../lib/motion';
+import { scheduleLinkPrefetch } from '../lib/prefetch';
 import LoginBackground from '../components/LoginBackground';
 import WaterIntro from '../components/login/WaterIntro';
 import DingTalkQrLogin from '../components/login/DingTalkQrLogin';
@@ -108,6 +109,19 @@ export default function LoginPage() {
   const reduceMotion = useRef(
     window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   ).current;
+
+  /**
+   * 首屏已经下完、入场动画正在放的时候，把下一步要用的资源悄悄下好。
+   *
+   * ⚠️ 放在这里（而不是 index.html 里写 link 标签）是有原因的 ——
+   * 写在 HTML 里浏览器会立刻开下，和 antd 那 435KB 抢连接，实测把首屏
+   * 拖慢 4.8 秒。详见 src/lib/prefetch.ts 的说明。
+   *
+   * 这一段只建 link 标签、不做别的，所以不会把动画卡住。
+   */
+  useEffect(() => {
+    scheduleLinkPrefetch();
+  }, []);
 
   useEffect(() => {
     const el = formBoxRef.current;

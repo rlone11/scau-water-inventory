@@ -45,20 +45,29 @@ function bootScreenPlugin(base: string, backendOrigin: string | null): Plugin {
       order: 'post',
       handler(html, ctx) {
         const bundle = ctx.bundle ?? {};
-        const links = Object.values(bundle)
+        const files = Object.values(bundle)
           .filter((c) => c.type === 'chunk' && shouldPrefetch(c.name, c.isDynamicEntry))
-          .map((c) => `<link rel="prefetch" as="script" href="${base}${c.fileName}">`);
-
-        // 提前和后端握手 —— 省下 DNS+TCP+TLS 三个往返。
-        // 国内到反代那一跳实测首字节 0.4~1.3 秒，能提前就提前。
-        if (backendOrigin) {
-          links.unshift(`<link rel="preconnect" href="${backendOrigin}" crossorigin>`);
-        }
+          .map((c) => `${base}${c.fileName}`);
 
         const head = [
           `<style>${bootScreenCss()}</style>`,
-          ...links.map((l) => '    ' + l),
-        ].join('\n');
+          // 提前和后端握手 —— 省下 DNS+TCP+TLS 三个往返。
+          // 只占一条连接、几乎不吃带宽，所以留在 HTML 里没问题。
+          backendOrigin ? `<link rel="preconnect" href="${backendOrigin}" crossorigin>` : '',
+          /**
+           * ⚠️⚠️ 清单是【数据】，不是 `<link rel="prefetch">` 标签。别改回去。
+           *
+           * 2026-09-24 踩过：第一版直接在这里生成 link 标签，以为浏览器会把
+           * prefetch 推迟到页面加载完 —— **不会**。它立刻就和首屏资源抢同一条
+           * 连接。实测（未挂加速器，交替跑两轮取平均）：
+           *     有预热 17509ms  vs  掐掉预热 12698ms   → 首屏被拖慢 4.8 秒
+           * 用户原话「加载时间感觉更长了，根本没有刚做好反代的时候快」。
+           *
+           * 现在只把文件清单塞给 JS，由 src/lib/prefetch.ts 在 React 挂载
+           * **之后**再建 link —— 那时候首屏已经下完了，动画正在放，链路是闲的。
+           */
+          `<script>window.__SCAU_PREFETCH__=${JSON.stringify(files)}</script>`,
+        ].filter(Boolean).join('\n    ');
 
         return html
           .replace('</head>', `  ${head}\n  </head>`)
