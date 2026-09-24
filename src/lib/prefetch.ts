@@ -16,6 +16,7 @@ const PAGE_LOADERS: Loader[] = [
   () => import('../pages/RecordsPage'),
   () => import('../pages/DingTalkPage'),
   () => import('../pages/ReturnPage'),
+  () => import('../pages/SettingsPage'),
   () => import('../pages/NotFoundPage'),
 ];
 

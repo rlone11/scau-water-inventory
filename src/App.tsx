@@ -18,6 +18,7 @@ const BorrowPage = lazy(() => import('./pages/BorrowPage'));
 const RecordsPage = lazy(() => import('./pages/RecordsPage'));
 const DingTalkPage = lazy(() => import('./pages/DingTalkPage'));
 const ReturnPage = lazy(() => import('./pages/ReturnPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 const Loading = () => (
@@ -44,6 +45,8 @@ function App() {
                   <Route path="/" element={<DashboardPage />} />
                   <Route path="/items" element={<ItemListPage />} />
                   <Route path="/items/:id/borrow" element={<BorrowPage />} />
+                  {/* 设置页对所有人可见（它是彩蛋，见 SettingsPage 里的说明） */}
+                  <Route path="/settings" element={<SettingsPage />} />
 
                   {/* 仅管理员 */}
                   <Route element={<AdminOnly />}>

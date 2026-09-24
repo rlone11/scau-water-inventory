@@ -11,6 +11,7 @@ import {
   SettingOutlined,
   CloudSyncOutlined,
   AuditOutlined,
+  SlidersOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
 import type { ScauRole } from '../types';
@@ -47,6 +48,14 @@ function menuForRole(role: ScauRole | null) {
     },
   ];
 
+  /**
+   * 设置页三种角色都能进。
+   *
+   * ⚠️ 图标用 SlidersOutlined 而不是 SettingOutlined —— 顶栏那个齿轮已经被
+   * 管理员头像下拉占了，侧栏再来一个齿轮会让人以为是同一件事。
+   */
+  const settings = { key: '/settings', icon: <SlidersOutlined />, label: '设置' };
+
   switch (role) {
     case 'admin':
       return [
@@ -54,12 +63,13 @@ function menuForRole(role: ScauRole | null) {
         { key: '/records', icon: <FileTextOutlined />, label: '借记记录' },
         { key: '/dingtalk', icon: <CloudSyncOutlined />, label: '钉钉审批' },
         { key: '/returns', icon: <AuditOutlined />, label: '物品核销' },
+        settings,
       ];
 
     case 'internal':
     case 'guest':
       // 能看库存、能借东西，但看不到任何人的借用记录
-      return browse;
+      return [...browse, settings];
 
     case null:
       // 理论上到不了：RouteGuard 会先把未登录的人弹回登录页

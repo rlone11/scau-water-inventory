@@ -16,9 +16,12 @@ function isInputFocused(): boolean {
  * 全局键盘快捷键
  * - Alt+1 → 仪表盘
  * - Alt+2 → 物品管理
- * - Alt+3 → 借记记录
+ * - Alt+3 → 借记记录（管理员专属页面：非管理员按了会被路由守卫弹回仪表盘）
+ * - Alt+4 → 设置
  * - Alt+← → 返回上一页
  * - Alt+R → 刷新全部数据
+ *
+ * ⚠️ 这里**不做权限判断**，交给路由守卫 —— 判两遍迟早会出现两处不一致。
  */
 export function useKeyboardShortcuts() {
   const navigate = useNavigate();
@@ -44,6 +47,10 @@ export function useKeyboardShortcuts() {
         case '3':
           e.preventDefault();
           if (location.pathname !== '/records') navigate('/records');
+          break;
+        case '4':
+          e.preventDefault();
+          if (location.pathname !== '/settings') navigate('/settings');
           break;
         case 'ArrowLeft':
           e.preventDefault();
