@@ -27,6 +27,18 @@ command = "VITE_DEPLOY_TARGET=netlify npm run build"
 [build.services]
 
 [[redirects]]
+from = "/sb/*"
+to = "https://rdmrplrlyojwugcxbqmj.supabase.co/:splat"
+status = 200.0
+force = true
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
+
+[[redirects]]
 from = "/*"
 to = "/index.html"
 status = 200.0

@@ -2,6 +2,28 @@
   command = "VITE_DEPLOY_TARGET=netlify npm run build"
   publish = "dist"
 
+# ─────────────────────────────────────────────────────────────────────
+# 后端反代（2026-09-24 新增）
+#
+# 为什么需要它：`*.supabase.co` 在国内被按域名（TLS SNI）封锁 —— 握手阶段
+# 就被掐断，浏览器代码一行都还没跑。同一个 IP 换个 SNI 立刻通，所以解法是
+# 「后端不动，换个域名把它挂出来」。前端仍是 rlone11.github.io，不受影响。
+#
+# ⚠️ 这条必须排在下面的 SPA 兜底规则【前面】。Netlify 按顺序匹配，
+#    顺序反了这条就永远轮不到，表现是「网站能开但一条数据都拿不到」。
+#
+# ⚠️ 上线前已在草稿部署逐项实测通过：OPTIONS 预检 / Origin 透传 / CORS 回显 /
+#    响应头 / Authorization 头 / Edge Function 路径 / 2.9MB 大请求体 / 不缓存。
+#    其中「Origin 透传」和「不缓存」最关键 —— 前者不过就全站拿不到数据，
+#    后者不过会看到过期库存。
+# ─────────────────────────────────────────────────────────────────────
+[[redirects]]
+  from = "/sb/*"
+  to = "https://rdmrplrlyojwugcxbqmj.supabase.co/:splat"
+  status = 200
+  force = true
+
+# SPA 兜底：其余所有路径交给前端路由处理
 [[redirects]]
   from = "/*"
   to = "/index.html"

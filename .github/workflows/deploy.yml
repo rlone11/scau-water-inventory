@@ -36,7 +36,19 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          # ⚠️ 2026-09-24 起后端走 Netlify 反代，不再是 supabase.co 直连。
+          #
+          # 为什么：`*.supabase.co` 在国内被按域名（TLS SNI）封锁 —— 握手阶段
+          # 就被掐断，浏览器代码一行都还没跑。实测同一 IP 换个 SNI 立刻通，
+          # 所以解法是「后端不动，换个域名把它挂出来」。
+          # 反代规则写在 netlify.toml 的 /sb/*，实测国内直连 3/3 通。
+          #
+          # ⚠️ 这个地址【不是密钥】—— 它会被打进前端 JS，人人可见，
+          #    所以直接写在这里；真正的密钥 VITE_SUPABASE_ANON_KEY 仍走 Secrets。
+          #
+          # ⚠️ 不要再改回 supabase.co，也不要指望 GitHub 里那个旧的
+          #    VITE_SUPABASE_URL Secret —— 那个值现在【没有作用了】。
+          VITE_SUPABASE_URL: https://ornate-lebkuchen-09cba5.netlify.app/sb
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Setup Pages
