@@ -4,69 +4,38 @@ import pkg from './package.json';
 import { LOGIN_GRADIENT } from './src/theme';
 
 /**
- * 首屏加载页 + 资源预热。
+ * 首屏加载屏。
  *
- * 背景：同学点开链接到能填表要 16 秒 —— 前面 9 秒是白屏（浏览器在等
- * 1.9MB 的 JS 下载+解析），后面 6.6 秒是入场动画。动画一秒不删（那是
- * 刻意保留的设计），但**那 6.6 秒里链路是闲着的**，正好拿来把下一步
- * 要用的东西先下好。
+ * 背景：同学点开链接到能填表要十几秒，前面那段浏览器在等 1.9MB 的 JS
+ * 下载+解析，屏幕上什么都没有。这里在 `index.html` 里先铺一块和登录页
+ * **同一个渐变**的加载屏（院徽 + 转圈），浏览器一拿到 HTML 立刻就有东西看 ——
+ * 实测白屏从 10.2 秒变成 0.8 秒。
  *
- * ⚠️ 铁律：**这里只准"下载"，不准"执行"。**
- * 项目踩过这个坑 —— 钉钉 SDK 曾经在动画期间挂载，它异步拉起的第二波活儿
- * 占了主线程 74~83ms，用户原话「粒子一开始汇聚不卡，到一个地方猛卡一下」。
- * 所以下面用的是 `rel="prefetch"`（浏览器只存进缓存，不解析不执行），
- * 而不是 `rel="modulepreload"`（那个会当场编译，正好会卡）。
+ * 渐变从 src/theme.ts 读 —— 那文件顶上写着「两边各写一遍渐变字符串，
+ * 交接瞬间就会出现一道色差」，所以这里绝不手抄。
  *
- * 顺带解决白屏：`index.html` 里先铺一块和登录页**同一个渐变**的加载屏，
- * 浏览器一拿到 HTML 立刻就有东西看。渐变从 src/theme.ts 读 ——
- * 那文件顶上写着「两边各写一遍渐变字符串，交接瞬间就会出现一道色差」，
- * 所以这里绝不手抄。
+ * ⚠️⚠️ **这个插件里绝对不要再加任何"提前下载"的东西。** 试过两次，两次都
+ * 把首屏拖慢了：
+ *   - 第一版把 `rel="prefetch"` 标签写进 HTML —— 以为浏览器会推迟到页面
+ *     加载完再下，**不会**，它立刻和 antd 那 435KB 抢连接。
+ *     实测有预热 17509ms vs 掐掉 12698ms，**拖慢 4.8 秒**。
+ *   - 第二版改成挂载后再由 JS 建 link，实测**仍然慢 3978ms**。
+ * 两次的对照组都指向同一个结论：这条链路上，任何额外流量都是从同学的
+ * 等待时间里抢的。用户原话「加载时间感觉更长了，根本没有刚做好反代的时候快」。
+ * 真要再试，**必须先在关掉加速器的环境下做 A/B，并跑够轮数**——
+ * 这个网络单次波动能到 2 倍，两轮取平均都不一定够。
  */
 function bootScreenPlugin(base: string, backendOrigin: string | null): Plugin {
-  /**
-   * 预热清单：
-   * - 所有懒加载的页面分块（每个都只有几 KB，很便宜）
-   * - recharts（367 KB）—— 同学填完表进去第一眼就是仪表盘，图表库就等它
-   *
-   * ⚠️ **xlsx（429 KB）必须排除**。它虽然也是动态引入（导 Excel 时用），
-   * 但那是管理员偶尔才碰的东西，来借东西的同学一辈子用不到。
-   * 实测第一版漏了这条，白白多下 429 KB，把带宽从同学要用的资源上分走。
-   *
-   * 合计预热 ~417 KB（recharts 367 + 各页面分块 ~50），
-   * 摊在「入场动画 + 填表」这段本来闲置的时间里。
-   */
-  const PREFETCH_EXCLUDE = new Set(['xlsx']);
-  const shouldPrefetch = (name: string, isDynamicEntry: boolean) =>
-    !PREFETCH_EXCLUDE.has(name) && (isDynamicEntry || name === 'recharts');
-
   return {
     name: 'scau-boot-screen',
     transformIndexHtml: {
       order: 'post',
-      handler(html, ctx) {
-        const bundle = ctx.bundle ?? {};
-        const files = Object.values(bundle)
-          .filter((c) => c.type === 'chunk' && shouldPrefetch(c.name, c.isDynamicEntry))
-          .map((c) => `${base}${c.fileName}`);
-
+      handler(html) {
         const head = [
           `<style>${bootScreenCss()}</style>`,
           // 提前和后端握手 —— 省下 DNS+TCP+TLS 三个往返。
           // 只占一条连接、几乎不吃带宽，所以留在 HTML 里没问题。
           backendOrigin ? `<link rel="preconnect" href="${backendOrigin}" crossorigin>` : '',
-          /**
-           * ⚠️⚠️ 清单是【数据】，不是 `<link rel="prefetch">` 标签。别改回去。
-           *
-           * 2026-09-24 踩过：第一版直接在这里生成 link 标签，以为浏览器会把
-           * prefetch 推迟到页面加载完 —— **不会**。它立刻就和首屏资源抢同一条
-           * 连接。实测（未挂加速器，交替跑两轮取平均）：
-           *     有预热 17509ms  vs  掐掉预热 12698ms   → 首屏被拖慢 4.8 秒
-           * 用户原话「加载时间感觉更长了，根本没有刚做好反代的时候快」。
-           *
-           * 现在只把文件清单塞给 JS，由 src/lib/prefetch.ts 在 React 挂载
-           * **之后**再建 link —— 那时候首屏已经下完了，动画正在放，链路是闲的。
-           */
-          `<script>window.__SCAU_PREFETCH__=${JSON.stringify(files)}</script>`,
         ].filter(Boolean).join('\n    ');
 
         return html
