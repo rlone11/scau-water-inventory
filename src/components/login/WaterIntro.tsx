@@ -1,56 +1,275 @@
 import { useEffect, useRef } from 'react';
 import { LOGIN_GRADIENT, LOGIN_EMBLEM_ID } from '../../theme';
-import {
-  BADGE_PADDING_RATIO,
-  CONVERGE_MS,
-  FAILSAFE_MS,
-  FLY_MS,
-  HANDOFF_MS,
-  MAX_BLUR,
-  RESOLVE_MS,
-  SAMPLE_W_DESKTOP,
-  SAMPLE_W_MOBILE,
-  TOTAL_MS,
-  buildParticles,
-  drawDots,
-  easeInOutCubic,
-  emblemSrc,
-  sampleEmblem,
-  type Layout,
-  type Particle,
-} from '../../lib/introParticles';
 
 /**
- * 入场动画：粒子汇聚成院徽 → 由模糊变清晰 → 飞向登录页顶部的位置落位。
+ * 入场动画：水滴汇聚成院徽 → 由模糊变清晰 → 飞向登录页顶部的位置落位。
  *
  * 四个阶段（时长是下面那几个常量，改的时候这里不用跟着改）：
- *   漂浮   加载屏阶段就在跑了 —— 粒子铺满全屏慢慢晃（**不在这个组件里**）
- *   汇聚   从粒子**此刻的位置**收拢，拼出院徽轮廓
- *   显影   白圆从中心往外漫，漫过的地方院徽从模糊变锐利、粒子退场
+ *   汇聚   水滴从屏幕各处飞聚，拼出院徽轮廓
+ *   显影   白圆从中心往外漫，漫过的地方院徽从模糊变锐利、水滴退场
  *   飞行   清晰的院徽缩小、飞到登录页顶部那个院徽的位置
- *   交接   整个动画层淡出，与底下的登录页交叉
+ *   交接   整块覆盖层淡出，与底下的登录页交叉
  *
- * ⚠️ **这个组件不自己建画布，它接管加载屏那一块。**
+ * ⚠️ 时钟从**第一帧真正画出来**才开始走，不是从组件挂载开始 —— 见下面 start 的说明。
  *
- * 加载屏（`build/introBoot.js`，在 React 启动之前就跑）已经把动画层
- * `#scau-intro` 和画布 `#scau-intro-canvas` 建好了 —— 而且**建在 `#root`
- * 外面**，因为 React 挂载时会把 `#root` 的子节点整个替换掉，画布放里面
- * 只会被抹掉，那就又变回"两套画面、中间闪一下"了。
- *
- * 所以这里只做两件事：**接管那批粒子**（从它们此刻的位置接着走，不重来）、
- * **渲染白圆底徽章**（加载屏阶段没有徽章）。加载屏没跑起来时才自己兜底。
- *
- * ⚠️ 时钟从**第一帧真正画出来**才开始走 —— 见下面 start 的说明。
- *
- * 交接为什么能无缝：动画层铺的是**和登录页一模一样的不透明渐变**
+ * 交接为什么能无缝：覆盖层铺的是**和登录页一模一样的不透明渐变**
  * （LOGIN_GRADIENT，两边共用一个常量），所以底下那一层不需要做任何配合 ——
- * 院徽飞到真实位置后整块淡出即可。
+ * 院徽飞到真实位置后整块淡出即可。如果两边各写一套渐变，或者让底下那层
+ * 等信号再淡入，就得对时间，稍有偏差就是一道闪。
+ *
+ * 性能约束（8G 内存的机器，且刚做完手机端优化）：
+ *   - 手机上采样降到 70px（约 1800 粒子）
+ *   - DPR 上限 2
+ *   - fillRect 替 arc（1~2px 下肉眼无区别但快数倍）
+ *   - 颜色串预生成，避免每帧几万次字符串分配
+ *   - 动画结束彻底停 RAF，不留常驻循环
  *
  * ⚠️ 有硬超时兜底。装饰动画无论卡在哪一步，到点必须放行 ——
  * 绝不能把人挡在登录页外面。
  */
 
-const EMBLEM_SRC = emblemSrc(import.meta.env.BASE_URL);
+const EMBLEM_SRC = `${import.meta.env.BASE_URL}images/镂空院徽2_标清.png`;
+
+/**
+ * 采样宽度（把院徽读成多少像素宽的点阵）。
+ *
+ * ⚠️ 这个值不能随便调大。实测对比过 60/80/100/120/150 五档：
+ *   - 60px  → 1311 点，糊成一团，字认不出来
+ *   - 100px → 3504 点，字形清晰、水滴感也在 ← 就用这档
+ *   - 150px → 7702 点，反而太密，一眼看穿是一颗颗孤立的点
+ *
+ * 关键是**点的半径要跟着缩放**（`显示宽 / 采样宽`）：半径小于相邻两点的
+ * 间距时，线条会断成一截截散斑 —— 这是第一版踩的坑。而且要**全取**，
+ * 不能从高分辨率里抽稀。
+ */
+const SAMPLE_W_DESKTOP = 100;
+const SAMPLE_W_MOBILE = 70;
+
+/** 透明度高于这个值才算院徽本体，滤掉抗锯齿的毛边 */
+const ALPHA_CUTOFF = 120;
+
+const CONVERGE_MS = 1600;
+const RESOLVE_MS = 1200;
+const FLY_MS = 1000;
+const TOTAL_MS = CONVERGE_MS + RESOLVE_MS + FLY_MS;
+
+/** 覆盖层淡出、与底下登录页交叉的时间 */
+const HANDOFF_MS = 420;
+
+/** 白圆漫过水滴之后，水滴退场用的过渡带宽（像素）—— 免得边缘像刀切 */
+const FLOOD_EDGE = 26;
+
+/**
+ * 显影阶段院徽的最大模糊半径。
+ *
+ * ⚠️ 这个模糊**只加在里面那张院徽图上，不加在白圆底上**。
+ * 加在白圆上的话，圆形裁切出来的那道水线会被一起糊掉，
+ * 变成一大圈灰糊糊的边 —— 白圆漫开的效果就废了。
+ */
+const MAX_BLUR = 10;
+
+/**
+ * 白圆底的内边距，占徽章直径的比例。
+ *
+ * ⚠️ 这个值同时也是「水滴拼的尺寸」和「清晰院徽的尺寸」之差的分母 ——
+ * 见 buildParticles 里的说明。定得越大，清晰那一刻院徽缩得越明显。
+ */
+const BADGE_PADDING_RATIO = 0.04;
+
+/** 兜底：动画再慢也不能超过这个点 */
+const FAILSAFE_MS = TOTAL_MS + HANDOFF_MS + 1500;
+
+interface Particle {
+  sx: number;
+  sy: number;
+  tx: number;
+  ty: number;
+  r: number;
+  delay: number;
+  tone: number;
+}
+
+interface Layout {
+  left: number;
+  top: number;
+  w: number;
+  h: number;
+}
+
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const easeInOutCubic = (t: number) =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+/**
+ * 预生成的填充色。三千多个粒子每帧拼一次颜色串就是每秒二十万次字符串
+ * 分配，在 8G 内存的机器上纯属自找 GC 压力。透明度量化成十几档，
+ * 颜色串只在模块加载时建一次。
+ */
+const ALPHA_BUCKETS = 14;
+const WHITE_STYLES = Array.from({ length: ALPHA_BUCKETS }, (_, i) =>
+  `rgba(255,255,255,${((i / (ALPHA_BUCKETS - 1)) * 0.95).toFixed(3)})`,
+);
+const CYAN_STYLES = Array.from({ length: ALPHA_BUCKETS }, (_, i) =>
+  `rgba(125,211,252,${((i / (ALPHA_BUCKETS - 1)) * 0.9).toFixed(3)})`,
+);
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('院徽图加载失败'));
+    img.src = src;
+  });
+}
+
+/** 把院徽读成点阵。选中的点全部返回，不抽稀 */
+async function sampleEmblem(
+  sampleW: number,
+): Promise<{ pts: { x: number; y: number }[]; h: number }> {
+  const img = await loadImage(EMBLEM_SRC);
+  const w = sampleW;
+  const h = Math.max(1, Math.round(sampleW * (img.height / img.width)));
+
+  const off = document.createElement('canvas');
+  off.width = w;
+  off.height = h;
+  const octx = off.getContext('2d', { willReadFrequently: true });
+  if (!octx) return { pts: [], h };
+
+  octx.drawImage(img, 0, 0, w, h);
+  const { data } = octx.getImageData(0, 0, w, h);
+
+  const pts: { x: number; y: number }[] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] > ALPHA_CUTOFF) pts.push({ x, y });
+    }
+  }
+  return { pts, h };
+}
+
+function buildParticles(
+  pts: { x: number; y: number }[],
+  sampleW: number,
+  sampleH: number,
+  W: number,
+  H: number,
+): { particles: Particle[]; layout: Layout } {
+  // 白圆底的直径。放大不会让线条断开 —— 粒径是按比例算的
+  const badgeSize = Math.min(W * 0.62, 380);
+  const padding = badgeSize * BADGE_PADDING_RATIO;
+
+  /**
+   * ⚠️ 水滴要拼成的尺寸是**里面那张院徽图**的尺寸，不是白圆底的尺寸。
+   *
+   * 之前这里用的是白圆底直径，于是水滴拼出 380px 的院徽，而清晰之后
+   * 那张图只有 380×(1−2×0.04)=350px —— 显影那一下院徽会「缩一下」，
+   * 同时外面冒出一圈白边，两件事叠在一起格外明显。
+   *
+   * 现在 scale 按内图算：水滴拼多大，清晰之后就是多大，一点不缩。
+   * 白圆底只是比它大出一圈 padding 而已。
+   */
+  const imgW = badgeSize - padding * 2;
+  const scale = imgW / sampleW;
+  const cx = W / 2;
+  const cy = H * 0.44;
+
+  const layout: Layout = {
+    left: cx - badgeSize / 2,
+    top: cy - badgeSize / 2,
+    w: badgeSize,
+    h: badgeSize,
+  };
+
+  if (pts.length === 0) return { particles: [], layout };
+
+  // 粒径必须跟着 scale 走：半径小于相邻采样点间距时线条会断开
+  const baseR = scale * 0.7;
+
+  const particles = pts.map((p) => {
+    const tx = cx + (p.x - sampleW / 2) * scale;
+    const ty = cy + (p.y - sampleH / 2) * scale;
+
+    // 起点：以院徽为中心向外散落，保证不会一开始就压在目标位置上
+    const angle = Math.random() * Math.PI * 2;
+    const radius = badgeSize * (1.2 + Math.random() * 3.2);
+
+    return {
+      sx: cx + Math.cos(angle) * radius,
+      sy: cy + Math.sin(angle) * radius,
+      tx,
+      ty,
+      r: baseR * (0.85 + Math.random() * 0.3),
+      delay: Math.random() * 240,
+      tone: Math.random(),
+    };
+  });
+
+  return { particles, layout };
+}
+
+/** 画水滴。白圆漫完就不画了，交给真正的院徽图 */
+function drawDots(
+  ctx: CanvasRenderingContext2D,
+  particles: Particle[],
+  t: number,
+  W: number,
+  H: number,
+  cx: number,
+  cy: number,
+  discR: number,
+): void {
+  ctx.clearRect(0, 0, W, H);
+  if (t >= CONVERGE_MS + RESOLVE_MS) return;
+
+  /**
+   * ⚠️ 水滴**不做整体淡出**，而是「被白圆漫过的才退场」。
+   *
+   * 整体淡出的话，外圈会在白圆还没漫到时就先空掉一块 ——
+   * 看着像院徽缺了个角。按距离逐个判断，画面就永远是完整的：
+   * 外面还是白色水滴，里面已经是黑院徽，边界就是那道白圆的边。
+   */
+  const flooding = t > CONVERGE_MS;
+
+  for (const p of particles) {
+    const localT = t - p.delay;
+    if (localT <= 0) continue;
+
+    let x: number;
+    let y: number;
+    let alpha: number;
+
+    if (localT < CONVERGE_MS) {
+      const k = easeOutCubic(localT / CONVERGE_MS);
+      x = p.sx + (p.tx - p.sx) * k;
+      y = p.sy + (p.ty - p.sy) * k;
+      alpha = Math.min(1, k * 1.6);
+    } else {
+      x = p.tx;
+      y = p.ty;
+      alpha = 0.92;
+    }
+
+    if (flooding) {
+      const d = Math.hypot(x - cx, y - cy);
+      const covered = Math.min(
+        1,
+        Math.max(0, (discR - d) / (2 * FLOOD_EDGE) + 0.5),
+      );
+      alpha *= 1 - covered;
+    }
+
+    if (alpha <= 0.01) continue;
+
+    const bucket = Math.min(
+      ALPHA_BUCKETS - 1,
+      Math.max(0, Math.round(alpha * (ALPHA_BUCKETS - 1))),
+    );
+    ctx.fillStyle = p.tone > 0.75 ? CYAN_STYLES[bucket] : WHITE_STYLES[bucket];
+    // 用方块而不是圆。这个尺寸下肉眼分不出，但快好几倍
+    ctx.fillRect(x - p.r, y - p.r, p.r * 2, p.r * 2);
+  }
+}
 
 /**
  * 更新院徽图的位置/透明度/模糊。
@@ -86,7 +305,7 @@ function makeBadgeUpdater(el: HTMLElement, img: HTMLElement) {
      * ⚠️ 内边距必须算成 px，**不能用百分比**。
      *
      * CSS 的百分比 padding 是相对**包含块的宽度**算的，不是元素自身宽度。
-     * 这个徽章在固定全屏的动画层里，所以写 `padding: 10%` 在 1200px 宽的屏上
+     * 这个徽章在固定全屏的覆盖层里，所以写 `padding: 10%` 在 1200px 宽的屏上
      * 是 120px 而不是 38px —— 院徽被挤成一小坨，跟登录页那个完全对不上。
      * 必须按自身宽度算成 px。比例与登录页那个真徽章保持一致。
      */
@@ -106,7 +325,8 @@ interface Props {
 }
 
 export default function WaterIntro({ onDone }: Props) {
-  const shellRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const badgeRef = useRef<HTMLDivElement>(null);
   const badgeImgRef = useRef<HTMLImageElement>(null);
   /** 用 ref 存回调，避免父组件每次重渲染都重启动画 */
@@ -114,10 +334,11 @@ export default function WaterIntro({ onDone }: Props) {
   onDoneRef.current = onDone;
 
   useEffect(() => {
-    const shell = shellRef.current;
+    const wrap = wrapRef.current;
+    const canvas = canvasRef.current;
     const badge = badgeRef.current;
     const badgeImg = badgeImgRef.current;
-    if (!shell || !badge || !badgeImg) {
+    if (!wrap || !canvas || !badge || !badgeImg) {
       onDoneRef.current();
       return;
     }
@@ -129,40 +350,12 @@ export default function WaterIntro({ onDone }: Props) {
       onDoneRef.current();
     };
 
-    /**
-     * 动画层。优先用加载屏建好的那一个（正常情况），
-     * 拿不到才自己兜底建一个 —— 绝不能因为加载屏没跑起来就整个不出动画。
-     */
-    let layer = document.getElementById('scau-intro');
-    let canvas = layer?.querySelector('canvas') as HTMLCanvasElement | null;
-    if (!layer || !canvas) {
-      layer = document.createElement('div');
-      layer.id = 'scau-intro';
-      layer.setAttribute(
-        'style',
-        `position:fixed;inset:0;z-index:200;pointer-events:auto;background:${LOGIN_GRADIENT};`,
-      );
-      canvas = document.createElement('canvas');
-      canvas.id = 'scau-intro-canvas';
-      canvas.setAttribute('style', 'position:absolute;inset:0;width:100%;height:100%');
-      layer.appendChild(canvas);
-      document.body.appendChild(layer);
-    }
-    const layerEl = layer;
-
-    /** 收尾：整个动画层淡出，让底下的登录页透出来，然后再摘掉自己 */
+    /** 收尾：整块覆盖层淡出，让底下的登录页透出来，然后再摘掉自己 */
     const handoff = () => {
       if (finished) return;
-      const tr = `opacity ${HANDOFF_MS}ms ease-out`;
-      layerEl.style.transition = tr;
-      layerEl.style.opacity = '0';
-      shell.style.transition = tr;
-      shell.style.opacity = '0';
-      window.setTimeout(() => {
-        // 这一层不是 React 管的（它建在 #root 外面），得手动摘
-        layerEl.remove();
-        finish();
-      }, HANDOFF_MS);
+      wrap.style.transition = `opacity ${HANDOFF_MS}ms ease-out`;
+      wrap.style.opacity = '0';
+      window.setTimeout(finish, HANDOFF_MS);
     };
 
     /**
@@ -174,11 +367,9 @@ export default function WaterIntro({ onDone }: Props) {
      */
     let failsafe = window.setTimeout(finish, FAILSAFE_MS);
 
-    // 用户在系统里关了动画 —— 尊重这个设置，直接进登录页。
-    // 加载屏那边看到同样的设置，也不会去画粒子。
+    // 用户在系统里关了动画 —— 尊重这个设置，直接进登录页
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       window.clearTimeout(failsafe);
-      layerEl.remove();
       finish();
       return;
     }
@@ -186,11 +377,11 @@ export default function WaterIntro({ onDone }: Props) {
     const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) {
       window.clearTimeout(failsafe);
-      layerEl.remove();
       finish();
       return;
     }
 
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let W = window.innerWidth;
     let H = window.innerHeight;
@@ -198,10 +389,10 @@ export default function WaterIntro({ onDone }: Props) {
     const resize = () => {
       W = window.innerWidth;
       H = window.innerHeight;
-      canvas!.width = W * dpr;
-      canvas!.height = H * dpr;
-      canvas!.style.width = `${W}px`;
-      canvas!.style.height = `${H}px`;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      canvas.style.width = `${W}px`;
+      canvas.style.height = `${H}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
@@ -210,24 +401,6 @@ export default function WaterIntro({ onDone }: Props) {
     const updateImage = makeBadgeUpdater(badge, badgeImg);
     let particles: Particle[] = [];
     let layout: Layout = { left: 0, top: 0, w: 0, h: 0 };
-    /** 粒子是不是从加载屏那儿接管过来的（接管的话位置已经被固化过了） */
-    let adopted = false;
-
-    /**
-     * ⭐ 接管加载屏的粒子。
-     *
-     * `detach()` 会把每颗粒子**此刻飘到的位置**写回它的 sx/sy，
-     * 所以下面那套汇聚逻辑（本来就只知道 sx/sy）拿过来就能直接用 ——
-     * 粒子从"飘着的位置"接着往院徽收，中间没有任何一帧是跳变的。
-     */
-    const boot = window.__SCAU_INTRO_BOOT__;
-    if (boot && boot.particles && boot.particles.length > 0) {
-      const taken = boot.detach();
-      particles = taken.particles;
-      layout = taken.layout;
-      adopted = true;
-    }
-
     /**
      * 飞行终点：登录页顶部那个真院徽的位置。
      *
@@ -270,7 +443,7 @@ export default function WaterIntro({ onDone }: Props) {
        * 白圆当前半径。
        *
        * 显影阶段的整个观感都靠这一条：白圆从中心往外漫，漫过的地方
-       * 黑院徽显形、粒子退场。深蓝底上的白色粒子和黑院徽本来是两种颜色，
+       * 黑院徽显形、水滴退场。深蓝底上的白色水滴和黑院徽本来是两种颜色，
        * 硬切会「跳」一下；用「水漫过去」这个动作把颜色变化解释掉，
        * 就成了一个连贯的过程。
        */
@@ -340,85 +513,64 @@ export default function WaterIntro({ onDone }: Props) {
       raf = requestAnimationFrame(frame);
     };
 
-    if (adopted) {
-      // 接管成功：粒子已经在画布上飘着了，直接开跑。
-      // 注意这里**不重画背景**，也不重建粒子 —— 重来一次就是"闪一下"。
-      updateImage(layout, 0, MAX_BLUR, 1.04, 0);
-      raf = requestAnimationFrame(frame);
-    } else {
-      // 兜底：加载屏没跑起来（图挂了、被禁用等），自己补一套
-      void (async () => {
-        try {
-          const sampleW = window.matchMedia('(max-width: 768px)').matches
-            ? SAMPLE_W_MOBILE
-            : SAMPLE_W_DESKTOP;
-          const { pts, h } = await sampleEmblem(EMBLEM_SRC, sampleW);
-          if (cancelled) return;
+    void (async () => {
+      try {
+        const sampleW = isMobile ? SAMPLE_W_MOBILE : SAMPLE_W_DESKTOP;
+        const { pts, h } = await sampleEmblem(sampleW);
+        if (cancelled) return;
 
-          const built = buildParticles(pts, sampleW, h, W, H);
-          particles = built.particles;
-          layout = built.layout;
+        const built = buildParticles(pts, sampleW, h, W, H);
+        particles = built.particles;
+        layout = built.layout;
 
-          if (particles.length === 0) {
-            window.clearTimeout(failsafe);
-            layerEl.remove();
-            finish();
-            return;
-          }
-
-          updateImage(layout, 0, MAX_BLUR, 1.04, 0);
-          raf = requestAnimationFrame(frame);
-        } catch {
-          // 图加载失败、canvas 被污染……任何异常都不能把人挡在登录页外
+        if (particles.length === 0) {
+          // 采样不出东西（图挂了/透明区判断失误），别卡着
           window.clearTimeout(failsafe);
-          layerEl.remove();
           finish();
+          return;
         }
-      })();
-    }
+
+        updateImage(layout, 0, MAX_BLUR, 1.04, 0);
+        raf = requestAnimationFrame(frame);
+      } catch {
+        // 图加载失败、canvas 被污染……任何异常都不能把人挡在登录页外
+        window.clearTimeout(failsafe);
+        finish();
+      }
+    })();
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
       window.clearTimeout(failsafe);
       window.removeEventListener('resize', resize);
-
-      /**
-       * ⚠️ 动画被中途打断（组件卸载）时，这一层必须摘掉。
-       *
-       * 它建在 `#root` 外面、不是 React 管的，没人会替我们收拾；
-       * 留着的话就是一层渐变 + 粒子永远盖在应用上面，而且
-       * pointer-events 是 auto —— **整个页面点都点不动**。
-       * 正常播完的路径上它已经自己摘过了，这里是幂等的。
-       */
-      layerEl.remove();
     };
   }, []);
 
   return (
-    /*
-      ⚠️ 这一层是**透明的**，只装白圆底徽章。
-      渐变和画布都由加载屏建的 `#scau-intro` 提供（它在下面一层，z-index 200），
-      所以这里要盖在它上面（201），而且不能有自己的背景 —— 有背景就等于
-      把粒子那层盖住了。
-    */
     <div
-      ref={shellRef}
+      ref={wrapRef}
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 201,
+        zIndex: 200,
+        // 不透明，且与登录页共用同一个渐变常量 —— 交接时它整块淡出即可，
+        // 底下那层不需要做任何配合
+        background: LOGIN_GRADIENT,
         // 挡住点击，免得动画期间点到底下还没露出来的登录控件
         pointerEvents: 'auto',
       }}
     >
+      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0 }} />
+
       {/*
         ⚠️ 院徽外面必须垫白色圆底。
 
         院徽图本身是**黑色镂空透明底**的，直接摆在深蓝背景上对比度极低，
         糊成一团灰。登录页正是因为这个问题才用白圆底衬着（侧边栏也一样）。
 
-        内边距由 makeBadgeUpdater 按尺寸算成 px（见那里的说明）。
+        内边距用百分比（10%），会跟着尺寸一起缩放 —— 所以飞到最后
+        380px → 80px 时，内部院徽正好是 64px，与登录页那个严丝合缝。
       */}
       <div
         ref={badgeRef}
@@ -429,6 +581,7 @@ export default function WaterIntro({ onDone }: Props) {
           background: '#ffffff',
           borderRadius: '50%',
           boxSizing: 'border-box',
+          // 具体的 padding 由 makeBadgeUpdater 按尺寸算（见那里的说明）
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',

@@ -46,15 +46,3 @@ export function schedulePrefetch(timeoutMs = 4000): void {
     window.setTimeout(prefetchPages, timeoutMs);
   }
 }
-
-/*
-  ⚠️ 2026-09-24 试过又撤掉的：在登录页「提前把下一步要用的资源下好」
-  （recharts + 各页面分块，约 417 KB），想利用入场动画那段闲置时间。
-
-  两次都让首屏更慢了 —— 第一次写成 HTML 里的 rel="prefetch"（拖慢 4.8 秒），
-  第二次改成挂载后再由 JS 建 link（仍慢约 4 秒）。详见 vite.config.ts
-  bootScreenPlugin 顶上的说明。
-
-  根子在于：**这台服务器在国内本来就窄**，任何额外流量都是从同学的等待
-  时间里抢的，没有真正"闲置"的带宽可以利用。
-*/

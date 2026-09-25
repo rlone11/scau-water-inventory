@@ -5,7 +5,6 @@ import { Card, Segmented, Typography } from 'antd';
 import { useAuth } from '../contexts/AuthContext';
 import { LOGIN_GRADIENT, LOGIN_EMBLEM_ID } from '../theme';
 import { toggleTransition } from '../lib/motion';
-import { HANDOFF_MS } from '../lib/introParticles';
 import LoginBackground from '../components/LoginBackground';
 import WaterIntro from '../components/login/WaterIntro';
 import DingTalkQrLogin from '../components/login/DingTalkQrLogin';
@@ -145,33 +144,6 @@ export default function LoginPage() {
     }
     setShowIntro(false);
   }, []);
-
-  /**
-   * 这次不播入场动画时，**加载屏那一层得自己收掉**。
-   *
-   * ⚠️ `#scau-intro` 是加载屏建在 `#root` **外面**的（放里面会被 React 抹掉），
-   * 所以 React 管不到它 —— 正常由 WaterIntro 收尾时摘掉。
-   * 但重复访问（同一个标签页第二次打开、sessionStorage 里有标记）不播动画，
-   * WaterIntro 根本不挂载，**没人摘它**，那一层就会连着粒子一直盖在登录页上面，
-   * 而且它 pointer-events 是 auto，**点都点不动**，等于把人锁死在外面。
-   *
-   * ⚠️ 用淡出而不是直接 remove：直接摘的话粒子是"啪"一下没的，
-   *    又变回用户明确不许有的那种闪现了。
-   */
-  useEffect(() => {
-    if (showIntro) return;
-
-    const boot = window.__SCAU_INTRO_BOOT__;
-    if (boot) boot.detach(); // 先停掉漂浮循环，别让它继续画
-
-    const layer = document.getElementById('scau-intro');
-    if (!layer) return;
-
-    layer.style.transition = `opacity ${HANDOFF_MS}ms ease-out`;
-    layer.style.opacity = '0';
-    const timer = window.setTimeout(() => layer.remove(), HANDOFF_MS);
-    return () => window.clearTimeout(timer);
-  }, [showIntro]);
 
   // 已经登录的人不该停在登录页（比如按了浏览器后退）
   useEffect(() => {
