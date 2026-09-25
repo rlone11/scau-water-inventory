@@ -382,6 +382,16 @@ export default function WaterIntro({ onDone }: Props) {
       cancelAnimationFrame(raf);
       window.clearTimeout(failsafe);
       window.removeEventListener('resize', resize);
+
+      /**
+       * ⚠️ 动画被中途打断（组件卸载）时，这一层必须摘掉。
+       *
+       * 它建在 `#root` 外面、不是 React 管的，没人会替我们收拾；
+       * 留着的话就是一层渐变 + 粒子永远盖在应用上面，而且
+       * pointer-events 是 auto —— **整个页面点都点不动**。
+       * 正常播完的路径上它已经自己摘过了，这里是幂等的。
+       */
+      layerEl.remove();
     };
   }, []);
 
