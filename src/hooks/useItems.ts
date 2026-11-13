@@ -9,6 +9,10 @@ export function useItems() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** 服务端实际总数，可能大于已加载的 items.length */
+  const [total, setTotal] = useState(0);
+  /** 是否因超过单次加载上限被截断 —— 由列表页显式提示，不静默吞掉 */
+  const [truncated, setTruncated] = useState(false);
   /** 正在请求中的图片 id —— 防止同一张图被重复并发请求 */
   const inFlightPhotoRef = useRef<Set<string>>(new Set());
 
@@ -21,9 +25,11 @@ export function useItems() {
     // 列表查询不含 photo 列（base64 大字段），先渲染出结构
     // 图片改由列表页按视口逐条加载 —— 滚到哪张，哪张先出来
     fetchItemsLite()
-      .then((data) => {
+      .then((result) => {
         if (cancelled) return;
-        setItems(data);
+        setItems(result.items);
+        setTotal(result.total);
+        setTruncated(result.truncated);
         setLoading(false);
       })
       .catch((err) => {
@@ -43,8 +49,10 @@ export function useItems() {
       setLoading(true);
       setError(null);
       fetchItemsLite()
-        .then((data) => {
-          setItems(data);
+        .then((result) => {
+          setItems(result.items);
+          setTotal(result.total);
+          setTruncated(result.truncated);
           setLoading(false);
         })
         .catch((err) => {
@@ -59,8 +67,10 @@ export function useItems() {
 
   const refresh = useCallback(async () => {
     try {
-      const data = await fetchItemsLite();
-      setItems(data);
+      const result = await fetchItemsLite();
+      setItems(result.items);
+      setTotal(result.total);
+      setTruncated(result.truncated);
     } catch {
       // 静默失败 — 保留旧数据
     }
@@ -192,10 +202,10 @@ export function useItems() {
 
   return useMemo(
     () => ({
-      items, loading, error,
+      items, total, truncated, loading, error,
       addItem, updateItem: updateOne, deleteItem: removeItem,
       searchItems, refresh, loadPhoto,
     }),
-    [items, loading, error, addItem, updateOne, removeItem, searchItems, refresh, loadPhoto],
+    [items, total, truncated, loading, error, addItem, updateOne, removeItem, searchItems, refresh, loadPhoto],
   );
 }

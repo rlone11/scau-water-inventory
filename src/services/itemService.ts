@@ -68,22 +68,42 @@ function invalidateItemCache(id: string): void {
 
 // ===== 查询 =====
 
+/**
+ * 列表一次最多加载的条数。
+ *
+ * 超过这个数会在列表页显式提示，绝不静默截断 —— 之前写死 200 时，
+ * 第 201 条以后在列表、仪表盘统计、借用和导出里全部不可见，且没有任何提示。
+ */
+export const ITEMS_LIST_LIMIT = 1000;
+
+export interface ItemsListResult {
+  items: Item[];
+  /** 服务端实际总数，可能大于 items.length */
+  total: number;
+  /** 是否因超过上限被截断 */
+  truncated: boolean;
+}
+
 /** 轻量查询：列表页用，排除 photo 和 notes，带缓存 */
-export async function fetchItemsLite(limit = 200): Promise<Item[]> {
+export async function fetchItemsLite(limit = ITEMS_LIST_LIMIT): Promise<ItemsListResult> {
   // 先查缓存
-  const cached = cacheGet<Item[]>(CACHE_KEYS.ITEMS_LIST);
+  const cached = cacheGet<ItemsListResult>(CACHE_KEYS.ITEMS_LIST);
   if (cached) return cached;
 
-  const { data, error } = await supabase
+  const { data, error, count } = await supabase
     .from('items')
-    .select(LIST_COLUMNS)
+    .select(LIST_COLUMNS, { count: 'exact' })
     .order('created_at', { ascending: false })
+    // 批量导入的条目 created_at 可能相同，加 id 保证顺序稳定
+    .order('id', { ascending: true })
     .limit(limit);
 
   if (error) throw error;
   const items = (data ?? []).map(rowToItem);
-  cacheSet(CACHE_KEYS.ITEMS_LIST, items);
-  return items;
+  const total = count ?? items.length;
+  const result: ItemsListResult = { items, total, truncated: total > items.length };
+  cacheSet(CACHE_KEYS.ITEMS_LIST, result);
+  return result;
 }
 
 /**

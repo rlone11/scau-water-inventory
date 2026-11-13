@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef, type HTMLAttributes } from 'react
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Input, Select, Row, Col, Tag, Button, Empty, Table, Space,
-  Popconfirm, message, Typography, Badge, Spin, Result, Image,
+  Popconfirm, message, Typography, Badge, Spin, Result, Image, Alert, Pagination,
 } from 'antd';
 import {
   SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
@@ -19,8 +19,11 @@ import { entrySpring } from '../lib/motion';
 const { Title } = Typography;
 const { Meta } = Card;
 
+/** 卡片视图每页数量：桌面 4 列 × 6 行，手机 2 列 × 12 行 */
+const CARD_PAGE_SIZE = 24;
+
 export default function ItemListPage() {
-  const { deleteItem, searchItems, loading, error, items, loadPhoto } = useItems();
+  const { deleteItem, searchItems, loading, error, items, total, truncated, loadPhoto } = useItems();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
 
@@ -28,10 +31,22 @@ export default function ItemListPage() {
   const [category, setCategory] = useState<ItemCategory | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'available' | 'borrowed'>('all');
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+  const [page, setPage] = useState(1);
 
   const filteredItems = useMemo(
     () => searchItems(search, category, statusFilter),
     [searchItems, search, category, statusFilter],
+  );
+
+  // 筛选条件变化时回到第一页，避免停在一个已经不存在的结果页上
+  useEffect(() => { setPage(1); }, [search, category, statusFilter]);
+
+  // 删除或筛选后当前页可能越界，渲染时先夹住；上面的 effect 随后会把 page 归位
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / CARD_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedItems = useMemo(
+    () => filteredItems.slice((safePage - 1) * CARD_PAGE_SIZE, safePage * CARD_PAGE_SIZE),
+    [filteredItems, safePage],
   );
 
   // ===== 视口优先加载图片 =====
@@ -62,10 +77,12 @@ export default function ItemListPage() {
     };
   }, []);
 
-  // 每次渲染后把新出现的卡片登记进观察器（重复 observe 是无害的）
+  // 每次渲染后重新登记当前页的卡片。
+  // 先 disconnect：翻页后旧卡片已从 DOM 移除，不清理会让观察器一直攥着死节点。
   useEffect(() => {
     const io = ioRef.current;
     if (!io) return;
+    io.disconnect();
     document
       .querySelectorAll<HTMLElement>('[data-item-id]:not([data-photo-requested])')
       .forEach((el) => io.observe(el));
@@ -178,6 +195,17 @@ export default function ItemListPage() {
         )}
       </div>
 
+      {/* 超过单次加载上限时的显式提示 —— 绝不静默截断 */}
+      {!loading && truncated && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16, borderRadius: 8 }}
+          message={`共 ${total} 条物品，当前只加载了前 ${items.length} 条`}
+          description="超出部分不会出现在列表、仪表盘统计和导出中。"
+        />
+      )}
+
       {/* Loading */}
       {loading && (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 240, flexDirection: 'column', gap: 16 }}>
@@ -248,9 +276,10 @@ export default function ItemListPage() {
           {filteredItems.length === 0 ? (
             <Empty className="empty-water" description="没有找到物品" style={{ marginTop: 60, borderRadius: 12 }} />
           ) : viewMode === 'card' ? (
+            <>
             <motion.div initial="hidden" animate="visible" variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.06 } } }}>
               <Row gutter={[12, 12]}>
-                {filteredItems.map((item) => (
+                {pagedItems.map((item) => (
                   <Col xs={12} sm={8} md={6} lg={6} key={item.id}>
                     <motion.div
                       variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
@@ -320,6 +349,21 @@ export default function ItemListPage() {
                 ))}
               </Row>
             </motion.div>
+            {filteredItems.length > CARD_PAGE_SIZE && (
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 20 }}>
+                <Pagination
+                  current={safePage}
+                  pageSize={CARD_PAGE_SIZE}
+                  total={filteredItems.length}
+                  showSizeChanger={false}
+                  onChange={(p) => {
+                    setPage(p);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                />
+              </div>
+            )}
+            </>
           ) : (
             <Card style={{ borderRadius: 12 }}>
               <Table
